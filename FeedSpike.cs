@@ -13,7 +13,7 @@ namespace ShrineDock;
 
 // GREY-BOX CPU GATE for the native Reddit feed (2026-11-04). Not part of the normal dock: it only runs as its own
 // process via `ShrineDock.exe --feed-spike <mode>` and never touches the dock, the clock or the keeper.
-//  modes: river (glide one post up every 6-8 s, 400 ms ease-out), slate (one big post, 600 ms crossfade every
+//  modes: drift (continuous slow drift, --speed px/s, --fps), river (glide one post up every 6-8 s, 400 ms ease-out), slate (one big post, 600 ms crossfade every
 //         20-30 s), still (river cards, nothing moves), none (no window: the process baseline for memory/DWM)
 //  --fast  uses the fastest end of each range (6 s / 20 s) so a 20 s sample is the worst case
 // The window is NOT layered (no AllowsTransparency): it is see-through through DWM (frame extended into the whole
@@ -55,10 +55,19 @@ class FeedSpikeWindow : Window
     readonly Random rnd = new(7);
     bool gliding, mouseOn;
     IntPtr me;
+    // drift mode: one long linear animation of the rail (WPF animates it; no app code per frame), eased to a halt on
+    // hover and eased back on leave; a card that has left the top is moved under the last one, out of sight
+    readonly double speed = 9; readonly int fps = 60; int driftGen;
+    readonly DispatcherTimer recycle = new() { Interval = TimeSpan.FromSeconds(1) };
+    readonly List<(double t, double y)> frames = [];
 
     public FeedSpikeWindow(string mode, bool fast)
     {
         this.mode = mode; this.fast = fast;
+        var argv = Environment.GetCommandLineArgs();
+        string? Arg(string k) => argv.SkipWhile(a => a != k).Skip(1).FirstOrDefault();
+        if (double.TryParse(Arg("--speed"), System.Globalization.CultureInfo.InvariantCulture, out var sp)) speed = sp;
+        if (int.TryParse(Arg("--fps"), out var f)) fps = f;
         WindowStyle = WindowStyle.None; AllowsTransparency = false; ResizeMode = ResizeMode.NoResize;
         Background = Brushes.Transparent; ShowInTaskbar = false; ShowActivated = false; Title = "Shrine Feed spike";
         double h = mode == "slate" ? SlateH + 2 * Pad : Shown * Step - Gap + 2 * Pad;
@@ -91,8 +100,9 @@ class FeedSpikeWindow : Window
             }
             rail.CacheMode = new BitmapCache();
         }
-        // mouse on: no gliding (the design); mouse gone: carry on
-        MouseEnter += (_, _) => mouseOn = true; MouseLeave += (_, _) => mouseOn = false;
+        // mouse on: no gliding (the design); mouse gone: carry on. Drift eases to a halt and back instead.
+        MouseEnter += (_, _) => { mouseOn = true; if (mode == "drift") Ease(stop: true); };
+        MouseLeave += (_, _) => { mouseOn = false; if (mode == "drift") Ease(stop: false); };
         Content = root;
 
         SourceInitialized += (_, _) =>
@@ -112,9 +122,61 @@ class FeedSpikeWindow : Window
             SetWindowRgn(me, CreateRoundRectRgn(0, 0, pw + 1, ph + 1, rr, rr), true);
             SetWindowPos(me, (IntPtr)1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
             if (mode is "river" or "slate") Arm();
+            if (mode == "drift") { DriftFrom(0); recycle.Tick += (_, _) => Recycle(); recycle.Start(); }
+            if (argv.Contains("--framelog")) FrameLog(argv.Contains("--hovertest"));
             FeedSpike.Log($"spike up: mode={mode} fast={fast} {pw}x{ph}px");
         };
         next.Tick += (_, _) => { next.Stop(); try { if (mode == "slate") Fade(); else Glide(); } catch (Exception ex) { FeedSpike.Log(ex.ToString()); Arm(); } };
+    }
+
+    void DriftFrom(double y)
+    {
+        driftGen++;
+        var a = new DoubleAnimation(y, y - speed * 3600, TimeSpan.FromSeconds(3600));
+        Timeline.SetDesiredFrameRate(a, fps);
+        railY.BeginAnimation(TranslateTransform.YProperty, a);
+    }
+
+    // a quadratic ease over 600 ms covering speed*0.3 px starts (or ends) at exactly the drift speed: no jolt
+    void Ease(bool stop)
+    {
+        int gen = ++driftGen; double y = railY.Y;
+        var a = new DoubleAnimation(y, y - speed * 0.3, TimeSpan.FromMilliseconds(600)) { EasingFunction = new QuadraticEase { EasingMode = stop ? EasingMode.EaseOut : EasingMode.EaseIn } };
+        Timeline.SetDesiredFrameRate(a, fps);
+        if (!stop) a.Completed += (_, _) => { if (gen == driftGen) DriftFrom(railY.Y); };
+        railY.BeginAnimation(TranslateTransform.YProperty, a);
+    }
+
+    void Recycle()
+    {
+        double y = railY.Y, bottom = cards.Max(Canvas.GetTop);
+        foreach (var c in cards.OrderBy(Canvas.GetTop).ToList())
+            if (Canvas.GetTop(c) + y < -CardH - 4) { bottom += Step; Canvas.SetTop(c, bottom); FeedSpike.Log($"recycled at y={y:F1}"); }
+    }
+
+    // diagnostic only (never in a gate run): logs every frame's time and rail offset for 40 s, then the stats
+    void FrameLog(bool hoverTest)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        EventHandler h = (_, _) => frames.Add((sw.Elapsed.TotalMilliseconds, railY.Y));
+        CompositionTarget.Rendering += h;
+        if (hoverTest)
+        {
+            var ht = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            ht.Tick += (_, _) => { mouseOn = !mouseOn; Ease(stop: mouseOn); FeedSpike.Log($"hovertest {(mouseOn ? "halt" : "resume")} at {sw.Elapsed.TotalMilliseconds:F0}ms"); };
+            ht.Start();
+        }
+        var done = new DispatcherTimer { Interval = TimeSpan.FromSeconds(40) };
+        done.Tick += (_, _) =>
+        {
+            done.Stop(); CompositionTarget.Rendering -= h;
+            var gaps = frames.Zip(frames.Skip(1), (a, b) => b.t - a.t).ToList();
+            var steps = frames.Zip(frames.Skip(1), (a, b) => a.y - b.y).ToList();
+            FeedSpike.Log($"frames={frames.Count} gapAvg={gaps.Average():F1}ms gapMax={gaps.Max():F1}ms gaps>25ms={gaps.Count(g => g > 25)} gaps>40ms={gaps.Count(g => g > 40)}");
+            FeedSpike.Log($"step px/frame: min={steps.Min():F3} max={steps.Max():F3} backwards={steps.Count(s => s < -0.001)}");
+            File.WriteAllLines(System.IO.Path.Combine(AppContext.BaseDirectory, "frames.csv"), frames.Select(f => $"{f.t:F2},{f.y:F3}"));
+        };
+        done.Start();
     }
 
     void Arm()
