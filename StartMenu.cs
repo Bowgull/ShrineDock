@@ -89,6 +89,7 @@ class StartMenu : Window
             for (var x = d; x != null; x = x is Visual || x is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(x) : LogicalTreeHelper.GetParent(x))
                 if (x == more || opts.Any(o => o.seal == x)) return;
             CloseFan();
+            e.Handled = true;   // the click that puts the fan away does nothing else (it used to fall through to the app under it)
         };
 
         AppCatalog.Changed += Redraw;
@@ -414,11 +415,13 @@ class StartMenu : Window
         fanOpen = true; fanLayer.Children.Clear(); opts.Clear();
         var c = more.TranslatePoint(new Point(18, 18), fanLayer);
         // a dark pool behind them so they read over the list, which dims
-        var pool = new Ellipse { Width = 300, Height = 240, IsHitTestVisible = false, Opacity = 0,
+        // it also takes the mouse, so nothing under the fan (the list, All, the seals) reacts while it is open (his report 2026-11-04)
+        var pool = new Ellipse { Width = 300, Height = 240, Opacity = 0,
             Fill = new RadialGradientBrush(new GradientStopCollection { new(Color.FromArgb(0xEC, 0x04, 0x10, 0x1A), 0), new(Color.FromArgb(0xC0, 0x04, 0x10, 0x1A), .45), new(Color.FromArgb(0, 0x04, 0x10, 0x1A), 1) }) };
         Canvas.SetLeft(pool, c.X - 150); Canvas.SetTop(pool, c.Y - 150); fanLayer.Children.Add(pool);
         pool.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(200)));
         scroll.BeginAnimation(OpacityProperty, new DoubleAnimation(.5, TimeSpan.FromMilliseconds(200)));
+        scroll.IsHitTestVisible = false;   // the list can't be hovered or clicked while the fan is out
         (string glyph, string name, Action act)[] things =
         [
             ("", "Downloads", Downloads), ("", "Recycle Bin", RecycleBin),
@@ -464,6 +467,8 @@ class StartMenu : Window
         }
         foreach (var p in fanLayer.Children.OfType<Ellipse>()) p.BeginAnimation(OpacityProperty, new DoubleAnimation(0, d));
         scroll.BeginAnimation(OpacityProperty, new DoubleAnimation(1, d));
+        scroll.IsHitTestVisible = true;
+        foreach (var p in fanLayer.Children.OfType<Ellipse>()) p.IsHitTestVisible = false;
     }
 
     static string DownloadsDir => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + @"\Downloads";
