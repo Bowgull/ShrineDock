@@ -55,6 +55,7 @@ Everything is in `docs/feed/`. Read these:
 5. Type: bundle **Philosopher 700** (titles) and **Fira Sans 400/500** (everything else), both OFL. Title `#F3EAD5`, Philosopher 20 / 1.28. Body `#A9B8C0`, Fira 14.5 / 1.65. Meta `#8EA6B3` 13. Age `#68869A`.
 
 ## His design rules (never break)
+- **Read `docs/DESIGN-LANGUAGE.md` first:** the kit's materials (the bars-and-joints rail, stone, spiral seals, cyan line), soft corners, smooth 2x quality, icons, colours and layout rules. Build every panel with `SettingsPanel.SoftFrame`.
 - No card per post, no boxes in boxes, no pill buttons, no helper text, no all-caps on the feed.
 - Soft, rounded shapes, never sharp corners. Smooth motion only: no jumps, no bounce.
 - Glow only on something that's switched on. One light, from the top. Never flip a lit thing to reuse it.
