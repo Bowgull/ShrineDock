@@ -30,6 +30,8 @@ sealed class MixerView
         internal Action<float>? Live;
         internal Action? Paint;
         internal bool Held;
+        internal double NameNeed;            // the width its name needs (0: no name)
+        internal ColumnDefinition? NameCol;
         internal double Silent;
     }
 
@@ -117,12 +119,20 @@ sealed class MixerView
             if (!made.TryGetValue(key, out var r)) made[key] = r = AppRow(a);
             Rows.Add(r);
         }
+        // the rule (his asks 2026-11-04), like a table: the name column is as wide as the longest name shown, no wider;
+        // every slider starts there and takes all the room left, so all bars are the same length and line up. Whole PC
+        // has no name: alone, its bar starts at its icon; with apps under it, it lines up with theirs.
+        double names = Math.Min(NameMax, Rows.Select(x => x.NameNeed).DefaultIfEmpty(0).Max());
+        foreach (var x in Rows) if (x.NameCol != null) x.NameCol.Width = new GridLength(names > 0 ? names + Gap : 0);
     }
+    double NameMax => compact ? 110 : 140;
+    double Gap => compact ? 8 : 9;
 
     Row MainRow()
     {
         Row r = null!;
-        r = MakeRow("", Speaker(false, Ice), "Whole PC", () => audio?.SpeakerName,
+        // his ask 2026-11-04: a PC in the dock folder's glowing line, in place of the words "Whole PC"
+        r = MakeRow("", Art("mixer-pc.png", "Whole PC"), "", () => audio?.SpeakerName,
             () => audio?.Master ?? 0, v => { if (audio != null) audio.Master = v; },
             () => audio?.MasterMute ?? false, m => { if (audio != null) audio.MasterMute = m; }, () => false);
         return r;
@@ -131,7 +141,9 @@ sealed class MixerView
     {
         UIElement icon;
         var src = a.Key == "samara" ? Pixel("rail-samara.png") : a.Exe != null ? StripWindow.FromExe(a.Exe) : null;
-        if (src != null)
+        // Cemu is Breath of the Wild: the game's own icon, whole (his pick over a face crop)
+        if (a.Key == "cemu") icon = Art("mixer-botw.png", "Breath of the Wild");
+        else if (src != null)
         {
             var img = new Image { Source = src, Width = IconSize, Height = IconSize };
             RenderOptions.SetBitmapScalingMode(img, a.Key == "samara" ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
@@ -169,9 +181,11 @@ sealed class MixerView
     Row MakeRow(string key, UIElement icon, string name, Func<string?> hint, Func<float> get, Action<float> set, Func<bool> muted, Action<bool> mute, Func<bool> quiet, string quietWord = "Quiet", Func<string?>? level = null)
     {
         double sliderW = compact ? 112 : 150, pctW = compact ? 40 : 44, gap = compact ? 8 : 9;
-        var g = new Grid { Height = key == "" ? (compact ? 44 : 52) : (compact ? 40 : 48), Background = Brushes.Transparent };
-        foreach (var w in new[] { IconSize, double.NaN, sliderW, pctW, 24 })
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = double.IsNaN(w) ? new GridLength(1, GridUnitType.Star) : new GridLength(w + gap) });
+        // the row keeps the width it always had (icon, a short name, the old 150 px slider, level, seal); the slider grows into what the names leave
+        var g = new Grid { MinWidth = IconSize + gap + 60 + sliderW + gap + pctW + gap + 24 + gap, Height = key == "" ? (compact ? 44 : 52) : (compact ? 40 : 48), Background = Brushes.Transparent };
+        // icon | name (Build sets its width: the longest name) | slider (all the rest) | level | mute seal
+        foreach (var w in new[] { IconSize, 0, double.NaN, pctW, 24 })
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = double.IsNaN(w) ? new GridLength(1, GridUnitType.Star) : new GridLength(w == 0 ? 0 : w + gap) });
         var iconHost = new Border { Width = IconSize, Height = IconSize, Child = icon, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
         var label = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, gap, 0) };
         var title = new TextBlock { Text = name, FontFamily = Font, FontWeight = FontWeights.Medium, FontSize = compact ? 13.5 : 14.5, Foreground = new SolidColorBrush(Ice), TextTrimming = TextTrimming.CharacterEllipsis };
@@ -180,7 +194,8 @@ sealed class MixerView
         Grid.SetColumn(label, 1);
 
         // the slider: sheet 10's carved well, smooth; the live line under it
-        var slider = new Grid { Width = sliderW, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, gap, 0), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+        bool wide = name == "";   // no name (Whole PC shows only its icon): nothing between icon and slider
+        var slider = new Grid { MinWidth = 60, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, gap, 0), Background = Brushes.Transparent, Cursor = Cursors.Hand };
         slider.RowDefinitions.Add(new RowDefinition { Height = new GridLength(22) }); slider.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) });
         var well = new Border { Height = 10, BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(WellEdge), Background = new SolidColorBrush(Well), VerticalAlignment = VerticalAlignment.Center };
         var fill = new Rectangle { Height = 6, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 0, 0), Fill = new LinearGradientBrush(Color.FromRgb(0x15, 0x5A, 0x80), Cyan, 0) };
@@ -192,19 +207,20 @@ sealed class MixerView
         Grid.SetRow(lineWell, 1); Grid.SetRow(line, 1);
         slider.Children.Add(well); slider.Children.Add(fill); slider.Children.Add(knob); slider.Children.Add(lineWell); slider.Children.Add(line);
         Grid.SetColumn(slider, 2);
+        double W() => slider.ActualWidth > 0 ? slider.ActualWidth : sliderW;
 
         var pct = new TextBlock { FontFamily = Font, FontStyle = FontStyles.Italic, FontWeight = FontWeights.SemiBold, FontSize = 13, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, gap, 0) };
         Grid.SetColumn(pct, 3);
         // the mute seal: the switch's seal on its own; amber when muted
         var seal = new Border { Width = 24, Height = 24, CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(2), Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(seal, 4);
-        g.Children.Add(iconHost); g.Children.Add(label); g.Children.Add(slider); g.Children.Add(pct); g.Children.Add(seal);
+        g.Children.Add(iconHost); if (!wide) g.Children.Add(label); g.Children.Add(slider); g.Children.Add(pct); g.Children.Add(seal);
 
         Row r = null!;
         void Paint()
         {
             float v = get(); bool m = muted();
-            double w = sliderW, p = Math.Clamp(v, 0, 1);
+            double w = W(), p = Math.Clamp(v, 0, 1);
             // the knob stays inside the well: its centre runs from 9 px in to 9 px from the end (at 100% it was half cut off)
             fill.Width = Math.Max(0, 7 + p * (w - 18)); knob.Margin = new Thickness(p * (w - 18), 0, 0, 0);
             pct.Text = m ? "Muted" : level?.Invoke() ?? Math.Round(v * 100) + "%";
@@ -219,7 +235,7 @@ sealed class MixerView
             seal.ToolTip = null;
         }
         void Set(float v) { set(Math.Clamp(v, 0, 1)); Paint(); }
-        void At(MouseEventArgs e) => Set((float)Math.Round(Math.Clamp((e.GetPosition(slider).X - 9) / (sliderW - 18), 0, 1) * 100) / 100f);
+        void At(MouseEventArgs e) => Set((float)Math.Round(Math.Clamp((e.GetPosition(slider).X - 9) / (W() - 18), 0, 1) * 100) / 100f);
         slider.MouseLeftButtonDown += (_, e) => { r.Held = true; slider.CaptureMouse(); At(e); e.Handled = true; };
         slider.MouseMove += (_, e) => { if (slider.IsMouseCaptured) At(e); };
         slider.MouseLeftButtonUp += (_, e) => { slider.ReleaseMouseCapture(); r.Held = false; e.Handled = true; };
@@ -233,14 +249,23 @@ sealed class MixerView
             Key = key, Element = g,
             Nudge = d => Set(get() + d * .02f),
             ToggleMute = () => { mute(!muted()); Paint(); },
-            Live = lvl => line.Width = Math.Clamp(lvl, 0, 1) * sliderW,
+            Live = lvl => line.Width = Math.Clamp(lvl, 0, 1) * W(),
             Paint = Paint,
         };
+        slider.SizeChanged += (_, _) => Paint();
+        if (!wide) { title.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity)); r.NameNeed = Math.Ceiling(title.DesiredSize.Width); }
+        r.NameCol = g.ColumnDefinitions[1];
         Paint();
         return r;
     }
 
     /// <summary>The speaker glyph from the sheet (a cone and two waves; muted: amber with a cross).</summary>
+    FrameworkElement Art(string file, string tip)
+    {
+        var img = new Image { Source = Pixel(file), Width = IconSize, Height = IconSize, ToolTip = tip };
+        RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+        return img;
+    }
     internal static FrameworkElement Speaker(bool muted, Color c, double size = 26)
     {
         var col = new SolidColorBrush(muted ? Color.FromRgb(0xEE, 0xA0, 0x40) : c);

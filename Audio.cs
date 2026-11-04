@@ -89,6 +89,8 @@ sealed class AudioMixer : IDisposable
         // Samara is Aang's Electron (castlabs build in AangApp)
         if (exe != null && file.Equals("electron", StringComparison.OrdinalIgnoreCase) && exe.Contains(@"\AangApp\", StringComparison.OrdinalIgnoreCase)) return ("samara", "Samara", exe);
         if (file.Equals("WowB", StringComparison.OrdinalIgnoreCase) || file.Equals("Wow", StringComparison.OrdinalIgnoreCase)) return ("wow", "WoW", exe);
+        // Cemu is only ever Breath of the Wild here (his ask 2026-11-04): the game's name and Link, not the emulator's; the key stays "cemu" so its remembered level carries over
+        if (file.Equals("Cemu", StringComparison.OrdinalIgnoreCase)) return ("cemu", "BotW", exe);
         string name = file;
         try { if (exe != null) { var d = FileVersionInfo.GetVersionInfo(exe).FileDescription?.Trim(); if (!string.IsNullOrEmpty(d) && d.Length <= 28) name = d; } } catch { }
         return (file.ToLowerInvariant(), name, exe);
