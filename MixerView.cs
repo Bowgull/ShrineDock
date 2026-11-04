@@ -197,8 +197,9 @@ sealed class MixerView
         bool wide = name == "";   // no name (Whole PC shows only its icon): nothing between icon and slider
         var slider = new Grid { MinWidth = 60, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, gap, 0), Background = Brushes.Transparent, Cursor = Cursors.Hand };
         slider.RowDefinitions.Add(new RowDefinition { Height = new GridLength(22) }); slider.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) });
-        var well = new Border { Height = 10, BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(WellEdge), Background = new SolidColorBrush(Well), VerticalAlignment = VerticalAlignment.Center };
-        var fill = new Rectangle { Height = 6, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 0, 0), Fill = new LinearGradientBrush(Color.FromRgb(0x15, 0x5A, 0x80), Cyan, 0) };
+        // soft edges (his rule): the well and its fill are pills, never square ends
+        var well = new Border { Height = 10, CornerRadius = new CornerRadius(5), BorderThickness = new Thickness(1.5), BorderBrush = new SolidColorBrush(WellEdge), Background = new SolidColorBrush(Well), VerticalAlignment = VerticalAlignment.Center };
+        var fill = new Rectangle { Height = 6, RadiusX = 3, RadiusY = 3, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 0, 0), Fill = new LinearGradientBrush(Color.FromRgb(0x15, 0x5A, 0x80), Cyan, 0) };
         var knob = new Ellipse { Width = 18, Height = 18, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Fill = SettingsPanel.Seal(),
             Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 6, ShadowDepth = 0, Opacity = .7 } };
         var lineWell = new Border { Height = 3, CornerRadius = new CornerRadius(1.5), Background = new SolidColorBrush(Color.FromArgb(0x16, 0x38, 0xC6, 0xFF)), VerticalAlignment = VerticalAlignment.Top };
