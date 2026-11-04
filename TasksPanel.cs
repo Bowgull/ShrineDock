@@ -36,6 +36,7 @@ class TasksPanel : Window
         var screen = Screens.All().FirstOrDefault(s => s.Area.Contains(new Point(c.X, c.Y)))?.Area ?? SystemParameters.WorkArea;
         open = new TasksPanel(screen);
         open.Closed += (s, _) => { if (open == s) open = null; closedAt = DateTime.Now; };
+        FullScreen.GiveBackOnClose(open);
         open.Show(); Bring(open);
         Program.Log($"tasks: opened on {screen}");
     }
@@ -394,16 +395,8 @@ class TasksPanel : Window
     static bool MenuOpen() => Application.Current.Windows.OfType<ShrineMenu>().Any();
     // a background app may not take the foreground; a tap of Alt lets it. Not needed when the dock already has the
     // foreground (opened from our Start), where the Alt landed on this window instead.
-    static void Bring(Window w)
-    {
-        var h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
-        GetWindowThreadProcessId(GetForegroundWindow(), out var fg);
-        bool ours = fg == (uint)Environment.ProcessId;
-        if (!ours) keybd_event(0x12, 0, 0, WinKey.Mine);
-        SetForegroundWindow(h);
-        if (!ours) keybd_event(0x12, 0, 2, WinKey.Mine);
-        w.Activate();
-    }
+    // 2026-11-04: Windows' own permission first; the Alt tap only if it refuses, since that Alt lands in a game
+    static void Bring(Window w) => FullScreen.Take(w);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
@@ -641,7 +634,7 @@ class Tasks
     {
         var w = a.Windows.FirstOrDefault(); if (w == IntPtr.Zero) return;
         if (IsIconic(w)) ShowWindow(w, 9);
-        keybd_event(0x12, 0, 0, WinKey.Mine); SetForegroundWindow(w); keybd_event(0x12, 0, 2, WinKey.Mine);
+        if (!SetForegroundWindow(w)) { keybd_event(0x12, 0, 0, WinKey.Mine); SetForegroundWindow(w); keybd_event(0x12, 0, 2, WinKey.Mine); }   // the Alt only if refused (it lands in a game)
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

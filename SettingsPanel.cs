@@ -31,7 +31,7 @@ class SettingsPanel : Window
         if (open != null) { open.Close(); return; }
         // the click on the seal that closed it from outside shouldn't reopen it straight away
         if ((DateTime.Now - closedByOutsideClick).TotalMilliseconds < 500) return;
-        open = new SettingsPanel(); open.Closed += (_, _) => open = null; open.Show(); open.Activate(); open.Focus();
+        open = new SettingsPanel(); open.Closed += (_, _) => open = null; FullScreen.GiveBackOnClose(open); open.Show(); open.Activate(); open.Focus();
     }
     /// <summary>Opens the menu on one page ("All sound settings…" in the strip's drop-down).</summary>
     public static void OpenOn(string name)

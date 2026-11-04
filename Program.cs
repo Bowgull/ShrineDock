@@ -137,7 +137,7 @@ static class Program
         app.Dispatcher.BeginInvoke(() => _ = Arrival.Run(args.Contains("--quiet") ? "restart" : "sign-in", quiet: args.Contains("--quiet")), DispatcherPriority.ApplicationIdle);
         // our Start: the Win key opens it on the screen the mouse is on; the app list is read once early so it opens full
         void Follow() => WinKey.LetWindowsHaveIt = dock.CurrentSettings.WindowsStart || dock.InGame;
-        Follow(); dock.SettingsChanged += Follow; dock.GameChanged += _ => Follow();
+        Follow(); dock.SettingsChanged += Follow; dock.FocusChanged += Follow;
         WinKey.TaskKeys = () => app.Dispatcher.BeginInvoke(TasksPanel.Toggle); // Ctrl+Shift+Esc: Shrine Tasks (sheet 21)
         WinKey.Start(() => app.Dispatcher.BeginInvoke(DockWindow.StartWhereTheMouseIs));
         app.Dispatcher.BeginInvoke(() => AppCatalog.Refresh(app.Dispatcher), DispatcherPriority.ApplicationIdle);
@@ -706,7 +706,11 @@ class DockWindow : Window
 
     // ---- Start: ours opens on this dock's screen, above its Start tile; Windows' own only if he chose it
     static readonly List<DockWindow> Live = [];
-    public bool InGame => asleepForGame;
+    // a game has the focus: Win and Ctrl+Shift+Esc go to Windows then. Not the same as asleepForGame since 2026-11-04:
+    // a game on top of this screen keeps the dock asleep even while he works on the other screen
+    bool gameFocused;
+    public bool InGame => gameFocused;
+    public event Action? FocusChanged;
     double StartTileX()
     {
         var t = tiles.FirstOrDefault(t => t.app.Key == "start").slot;
@@ -776,10 +780,13 @@ class DockWindow : Window
         lift.BeginAnimation(TranslateTransform.YProperty, k);
     }
 
-    // ---- games, like Windows (his pick 2026-11-02): out of sight while WoW or Cemu is the window in front on this
-    // screen; alt-tab out, or use the other screen, and the dock is back
+    // ---- games, like Windows (his pick 2026-11-02): out of sight while WoW or Cemu is the window on top on this
+    // screen; alt-tab out (another window on top there) and the dock is back. Using the other screen no longer wakes it
+    // over the game (2026-11-04: a full-screen screen is left alone).
     void CheckGame()
     {
+        bool f = FullScreen.GameFocused();
+        if (f != gameFocused) { gameFocused = f; FocusChanged?.Invoke(); }
         bool game = StripWindow.GameInFrontOn(screen);
         if (game == asleepForGame) return;
         asleepForGame = game; GameChanged?.Invoke(game);

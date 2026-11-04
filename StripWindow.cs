@@ -619,16 +619,9 @@ class StripWindow : Window
 
     // ---- games, like Windows (his pick 2026-11-02): out of sight while WoW or Cemu is the window in front on this
     // screen; alt-tab out, or use the other screen, and the strip is back
-    internal static bool GameInFrontOn(Rect screen)
-    {
-        var fg = GetForegroundWindow(); if (fg == IntPtr.Zero) return false;
-        GetWindowThreadProcessId(fg, out var pid);
-        var exe = ExePath(pid); if (exe == null) return false;
-        var name = System.IO.Path.GetFileNameWithoutExtension(exe);
-        if (!name.Equals("WowB", StringComparison.OrdinalIgnoreCase) && !name.Equals("Wow", StringComparison.OrdinalIgnoreCase) && !name.Equals("Cemu", StringComparison.OrdinalIgnoreCase)) return false;
-        var mon = MonitorFromPoint(new POINT { X = (int)(screen.Left + screen.Width / 2), Y = (int)(screen.Top + screen.Height / 2) }, 2);
-        return MonitorFromWindow(fg, 2) == mon;
-    }
+    // 2026-11-04: the game on top of this screen counts even when the focus is on the other screen, so working there
+    // no longer wakes this strip over the game (FullScreen.cs)
+    internal static bool GameInFrontOn(Rect screen) => FullScreen.GameOn(screen);
     void CheckGame()
     {
         bool game = GameInFrontOn(area);

@@ -111,7 +111,7 @@ class VolumePopup : Window
     void Place(Point under)
     {
         mixer.Start(); Fill();
-        Left = under.X; Top = under.Y; Show(); if (pinned) Activate(); UpdateLayout();
+        Left = under.X; Top = under.Y; if (pinned) FullScreen.GiveBackOnClose(this); Show(); if (pinned) Activate(); UpdateLayout();
         var wa = Screens.WorkAreaAt(under);
         // its right edge lines up a little past the tile, like the sheet; the pane's 14 px shadow margin is outside
         Left = Math.Clamp(under.X - ActualWidth + 48, wa.Left + 4, wa.Right - ActualWidth - 4);

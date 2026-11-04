@@ -20,25 +20,35 @@ static class ScreenMove
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
 
     /// <summary>Call just before starting the app: watches for its new window and brings it to <paramref name="to"/>.</summary>
-    public static void AfterLaunch(string? process, Rect to)
+    /// <summary>When something was last opened from the dock or Start (a pop-up closing then leaves the focus to it).</summary>
+    public static DateTime LastLaunch { get; private set; }
+
+    // 2026-11-04 (a full-screen screen is left alone): the window used to be moved 150-400 ms after it showed, so it
+    // flashed over a game or video on the other screen first. Now it is moved the moment it shows (looked for every
+    // 15 ms), then checked again at 0.3 s and 1 s in case the app put itself back where it last was.
+    public static void AfterLaunch(string? process, Rect to, int seconds = 10)
     {
+        LastLaunch = DateTime.UtcNow;
         if (Screens.All().Count < 2) return;
         var before = new HashSet<IntPtr>(StripWindow.OpenWindows());
         var started = DateTime.UtcNow;
-        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        var t = new DispatcherTimer(DispatcherPriority.Send) { Interval = TimeSpan.FromMilliseconds(15) };
         t.Tick += (_, _) =>
         {
             try
             {
-                if ((DateTime.UtcNow - started).TotalSeconds > 10) { t.Stop(); return; }
+                if ((DateTime.UtcNow - started).TotalSeconds > seconds) { t.Stop(); return; }
                 foreach (var h in StripWindow.OpenWindows())
                 {
                     if (before.Contains(h) || (process != null && !IsProcess(h, process))) continue;
                     t.Stop();
-                    // give the app a moment to put its window where it wants, then move it once
-                    var once = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-                    once.Tick += (_, _) => { once.Stop(); try { MoveTo(h, to); } catch { } };
-                    once.Start();
+                    try { MoveTo(h, to); } catch { }
+                    foreach (var ms in new[] { 300, 1000 })
+                    {
+                        var again = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
+                        again.Tick += (_, _) => { again.Stop(); try { MoveTo(h, to); } catch { } };
+                        again.Start();
+                    }
                     return;
                 }
             }

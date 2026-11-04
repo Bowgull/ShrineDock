@@ -84,6 +84,7 @@ class ShrineMenu : Window
     void Place(Point at, bool upward)
     {
         Left = at.X; Top = at.Y; // open on the clicked screen from the start (it's still invisible), then fit it there
+        FullScreen.GiveBackOnClose(this);   // closing it hands the keys back (a game on the other screen keeps playing)
         Show(); Activate(); UpdateLayout();
         var wa = Screens.WorkAreaAt(at); // the screen that was clicked, never just the main one
         double w = ActualWidth, h = ActualHeight;

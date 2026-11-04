@@ -33,6 +33,7 @@ class StartMenu : Window
         else if ((DateTime.Now - closedAt).TotalMilliseconds < 300) return; // the click that closed it from outside
         open = new StartMenu(screen, anchorX);
         open.Closed += (s, _) => { if (open == s) open = null; closedAt = DateTime.Now; };
+        FullScreen.GiveBackOnClose(open);   // Esc or a click on the desktop gives the keys back to what had them
         open.Show(); Bring(open);
     }
     public static bool IsOpen => open != null;
@@ -334,6 +335,7 @@ class StartMenu : Window
     // ---- doing things
     void Open(AppCatalog.Entry a)
     {
+        ScreenMove.AfterLaunch(null, screen, 6);   // it opens on the screen Start was on
         AppCatalog.Launch(a);
         var s = Settings.Load();
         Settings.Save(s with { StartRecent = [a.Name, .. (s.StartRecent ?? []).Where(n => n != a.Name).Take(5)] });
@@ -549,13 +551,8 @@ class StartMenu : Window
     static BitmapImage Art(string file) { var b = new BitmapImage(new Uri(System.IO.Path.Combine(AppContext.BaseDirectory, "art", file))); b.Freeze(); return b; }
     bool CursorOnMe() { GetCursorPos(out var c); return c.X >= Left && c.X <= Left + ActualWidth && c.Y >= Top && c.Y <= Top + ActualHeight; }
     static bool MenuOpen() => Application.Current.Windows.OfType<ShrineMenu>().Any();
-    // a background app may not take the foreground; a tap of Alt (sent by us) lets it, the usual way round that
-    static void Bring(Window w)
-    {
-        var h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
-        keybd_event(0x12, 0, 0, WinKey.Mine); SetForegroundWindow(h); keybd_event(0x12, 0, 2, WinKey.Mine);
-        w.Activate();
-    }
+    // the focus, without an Alt tap landing in a game unless Windows refuses (FullScreen.Take)
+    static void Bring(Window w) => FullScreen.Take(w);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
     struct POINT { public int X, Y; }
