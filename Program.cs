@@ -153,7 +153,8 @@ static class Program
 // StartPins/StartRecent: our Start's pins and last-opened apps, by name; WindowsStart: Win and the Start tile open
 // Windows' own Start instead (missing reads as false, so ours is the default)
 record Settings(bool HideUntilHover = true, int HideDelayMs = 900, int LabelDelayMs = 600, bool LockWidgets = false, string[]? Pinned = null, string[]? Hidden = null, int ClockX = 1488, int ClockY = 60, int ClockSize = 400, bool FreeScreen2 = false,
-    string[]? StartPins = null, string[]? StartRecent = null, bool WindowsStart = false, bool ForgetLevels = false)
+    string[]? StartPins = null, string[]? StartRecent = null, bool WindowsStart = false, bool ForgetLevels = false,
+    string[]? Order = null)   // the dock's order after he drags (built-in keys, "pin:<launch>" for his pins)
 {
     public static string Path => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ShrineDock", "settings.json");
     public static Settings Load()
@@ -217,7 +218,7 @@ class DockWindow : Window
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent;
         ShowInTaskbar = false; Topmost = true; ResizeMode = ResizeMode.NoResize; ShowActivated = false;
         Title = "Shrine Dock";
-        Content = root;
+        Content = root; AllowDrop = true;
         Build();
         Loaded += (_, _) =>
         {
@@ -243,7 +244,7 @@ class DockWindow : Window
         {
             await Task.Delay(200); // let the writer finish, or the read sees a half-written file and falls back to defaults
             var old = settings; settings = Settings.Load();
-            string Pins(Settings s) => string.Join("\n", s.Pinned ?? []) + "/" + string.Join("\n", s.Hidden ?? []);
+            string Pins(Settings s) => string.Join("\n", s.Pinned ?? []) + "/" + string.Join("\n", s.Hidden ?? []) + "/" + string.Join("\n", s.Order ?? []);
             if (Pins(old) != Pins(settings)) Rebuild();
             if (!settings.HideUntilHover) Rise();
             SettingsChanged?.Invoke();
@@ -264,13 +265,28 @@ class DockWindow : Window
             bool fromStart = bits[1].StartsWith("shell:", StringComparison.OrdinalIgnoreCase);
             list.Add(new("pin", bits.Length == 3 ? "file:" + bits[2] : "exe:" + bits[1], 40, false, bits[1], null, fromStart ? null : System.IO.Path.GetFileNameWithoutExtension(bits[1]), bits[0], !fromStart));
         }
+        // his order (he drags them, 2026-11-04); anything not in it yet (a new pin) keeps its place at the end.
+        // Start always stays first, as Finder does on the Mac.
+        var order = settings.Order ?? [];
+        if (order.Length > 0)
+            list = [.. list.Select((a, i) => (a, i)).OrderBy(t => Array.IndexOf(order, KeyOf(t.a)) is var k and >= 0 ? k : order.Length + t.i).Select(t => t.a)];
+        int st = list.FindIndex(a => a.Key == "start");
+        if (st > 0) { var s = list[st]; list.RemoveAt(st); list.Insert(0, s); }
         return [.. list];
     }
+    static string KeyOf(App a) => a.Key == "pin" ? "pin:" + a.Launch : a.Key;
     void Rebuild()
     {
-        bool wasOpen = open; Hover(-1); open = false;
+        bool wasOpen = open; Hover(-1); open = false; dragFrom = -1; dragging = false;
         root.Children.Clear(); tiles.Clear(); Build(); Place(); RefreshRunning();
-        if (wasOpen) Rise(); else SetClickThrough(true);
+        if (wasOpen)
+        {
+            // already up: show the new row in place, without sinking and rising again
+            open = true; SetClickThrough(false);
+            rise.BeginAnimation(TranslateTransform.YProperty, null); rise.Y = 0;
+            Group.Opacity = 1; seam.BeginAnimation(OpacityProperty, null); seam.Opacity = 0;
+        }
+        else SetClickThrough(true);
     }
 
     void Build()
@@ -283,9 +299,11 @@ class DockWindow : Window
 
         var group = new Canvas { RenderTransform = rise };
         double x = (winW - slabW) / 2, slotTop = winH - Bottom - SlabH + (SlabH - Slot) / 2;
+        centers.Clear(); this.slotTop = slotTop;
         for (int i = 0; i < n; i++)
         {
             if (fi >= 0 && i == fi + 1) x += Gap + 14; // a wider gap after File Explorer, no divider
+            centers.Add(x + Slot / 2);
             group.Children.Add(MakeTile(i, x, slotTop));
             x += Slot + Gap;
         }
@@ -329,11 +347,127 @@ class DockWindow : Window
         host.Children.Add(slot); host.Children.Add(pip); host.Children.Add(label);
         slot.MouseEnter += (_, _) => Hover(i);
         slot.MouseLeave += (_, _) => { if (hovered == i) Hover(-1); };
-        slot.MouseLeftButtonUp += (_, _) => LaunchApp(a);
+        // press and slide to move it (2026-11-04); a press that never slides is still a click. Start stays put.
+        slot.MouseLeftButtonDown += (_, e) =>
+        {
+            if (a.Key == "start") return;
+            dragFrom = i; dragTarget = -1; dragging = false; downAt = e.GetPosition(this); slot.CaptureMouse(); e.Handled = true;
+        };
+        slot.MouseMove += (_, e) =>
+        {
+            if (dragFrom != i || !slot.IsMouseCaptured) return;
+            var p = e.GetPosition(this);
+            if (!dragging && (Math.Abs(p.X - downAt.X) > 6 || Math.Abs(p.Y - downAt.Y) > 6)) { dragging = true; labelTimer.Stop(); Fade(label, 0, 100); }
+            if (dragging) DragTo(p);
+        };
+        slot.MouseLeftButtonUp += (_, e) =>
+        {
+            bool was = dragging && dragFrom == i;
+            ending = true; if (slot.IsMouseCaptured) slot.ReleaseMouseCapture(); ending = false;
+            if (was) EndDrag(e.GetPosition(this), img.Source); else LaunchApp(a);
+            dragFrom = -1; dragging = false;
+        };
+        slot.LostMouseCapture += (_, _) => { if (!ending && dragging && dragFrom == i) { dragFrom = -1; dragging = false; Rebuild(); } };
         slot.MouseRightButtonUp += (_, _) => Menu(a, img.Source);
         slot.Cursor = System.Windows.Input.Cursors.Hand;
+        // files dropped on it: a program pins it here; anything else opens with this app (where the app can take it)
+        slot.AllowDrop = true;
+        slot.DragEnter += (_, e) => { dropFx = DropEffect(a, e); e.Effects = dropFx; e.Handled = true; Hover(i); };
+        slot.DragOver += (_, e) => { e.Effects = dropFx; e.Handled = true; };
+        slot.DragLeave += (_, _) => { if (hovered == i) Hover(-1); };
+        slot.Drop += (_, e) => { e.Handled = true; Hover(-1); if (DroppedFiles(e) is { } f) Dropped(a, i, f); };
         tiles.Add((a, slot, scale, lift, pip, label));
         return host;
+    }
+
+    // ---- dragging a tile along the row (2026-11-04): the others step aside; pulled up and off, it asks to unpin
+    int dragFrom = -1, dragTarget = -1;
+    bool dragging, ending;
+    Point downAt;
+    double slotTop;
+    readonly List<double> centers = [];
+    const double OffBy = 70;   // pulled this far above the row, letting go asks to unpin
+    void DragTo(Point p)
+    {
+        int from = dragFrom; var me = tiles[from];
+        me.lift.BeginAnimation(TranslateTransform.XProperty, null); me.lift.BeginAnimation(TranslateTransform.YProperty, null);
+        // it follows the mouse up only as far as the dock's own window reaches, or it would vanish past its top edge
+        me.lift.X = p.X - downAt.X; me.lift.Y = Math.Max(-slotTop, -8 + Math.Min(0, p.Y - downAt.Y));
+        bool off = p.Y < slotTop - OffBy;
+        me.slot.Opacity = off ? .45 : 1;
+        int t = from;
+        if (!off)
+        {
+            double c = centers[from] + p.X - downAt.X; t = 0;
+            for (int j = 0; j < centers.Count; j++) if (j != from && centers[j] < c) t++;
+            if (tiles.Count > 0 && tiles[0].app.Key == "start") t = Math.Max(t, 1);   // Start stays first
+        }
+        if (t == dragTarget) return;
+        dragTarget = t;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        for (int j = 0; j < tiles.Count; j++)
+        {
+            if (j == from) continue;
+            int end = j < from ? (j >= t ? j + 1 : j) : (j <= t ? j - 1 : j);
+            tiles[j].lift.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(centers[end] - centers[j], TimeSpan.FromMilliseconds(160)) { EasingFunction = ease });
+        }
+    }
+    void EndDrag(Point p, ImageSource? icon)
+    {
+        int from = dragFrom, t = dragTarget < 0 ? dragFrom : dragTarget; var a = tiles[from].app;
+        if (p.Y < slotTop - OffBy)
+        {
+            Rebuild();   // back in its place while the question is up
+            GetCursorPos(out var c); var d = VisualTreeHelper.GetDpi(this);
+            ShrineMenu.Confirm($"Unpin {a.Name} from the dock?", icon, "Yes, unpin", () => Unpin(a), new Point(c.X / d.DpiScaleX, c.Y / d.DpiScaleY), upward: true);
+            return;
+        }
+        if (t == from) { Rebuild(); return; }
+        var keys = Apps.Select(KeyOf).ToList(); var k = keys[from]; keys.RemoveAt(from); keys.Insert(t, k);
+        settings = Settings.Load() with { Order = [.. keys] }; Settings.Save(settings);
+        Rebuild();
+    }
+
+    // ---- files dragged onto a tile
+    DragDropEffects dropFx;
+    static string[]? DroppedFiles(DragEventArgs e) => e.Data.GetDataPresent(DataFormats.FileDrop) ? e.Data.GetData(DataFormats.FileDrop) as string[] : null;
+    /// <summary>A shortcut's target (an app shortcut with no file target stays the shortcut).</summary>
+    static string Resolve(string f)
+    {
+        if (!f.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)) return f;
+        try { dynamic sh = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!; string t = sh.CreateShortcut(f).TargetPath; return string.IsNullOrEmpty(t) ? f : t; }
+        catch { return f; }
+    }
+    static bool IsProgram(string f) { var r = Resolve(f); return !Directory.Exists(r) && (r.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || r.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)); }
+    // only apps that take a file to open: File Explorer, and his own pins that are plain programs
+    static bool OpensFiles(App a) => a.Key == "files" || (a.Key == "pin" && a.Launch.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+    static DragDropEffects DropEffect(App a, DragEventArgs e)
+    {
+        var f = DroppedFiles(e);
+        if (f == null || f.Length == 0) return DragDropEffects.None;
+        if (f.All(IsProgram)) return DragDropEffects.Link;
+        return OpensFiles(a) ? DragDropEffects.Copy : DragDropEffects.None;
+    }
+    void Dropped(App a, int at, string[] files)
+    {
+        if (files.All(IsProgram)) { PinHere(files, at); return; }
+        if (!OpensFiles(a)) return;
+        foreach (var f in files.Take(10))
+            if (a.Key == "files") Run("explorer.exe", Directory.Exists(f) ? $"\"{f}\"" : $"/select,\"{f}\"");
+            else Run(a.Launch, $"\"{f}\"", System.IO.Path.GetDirectoryName(a.Launch));
+    }
+    /// <summary>Programs dropped on the dock join it right after the tile they landed on.</summary>
+    void PinHere(string[] files, int at)
+    {
+        var s = Settings.Load(); var pins = (s.Pinned ?? []).ToList(); var keys = Apps.Select(KeyOf).ToList(); int pos = at + 1;
+        foreach (var f in files)
+        {
+            var exe = Resolve(f);
+            if (IsPinned(exe, out _) || pins.Any(p => p.Split('|') is var b && b.Length >= 2 && b[1].Equals(exe, StringComparison.OrdinalIgnoreCase))) continue;
+            pins.Add(System.IO.Path.GetFileNameWithoutExtension(f).Replace("|", " ") + "|" + exe);
+            keys.Insert(Math.Min(pos++, keys.Count), "pin:" + exe);
+        }
+        Settings.Save(s with { Pinned = [.. pins], Order = [.. keys] });
     }
 
     static BitmapImage? LoadFile(string path)
@@ -374,6 +508,7 @@ class DockWindow : Window
         if (++gameCheck >= 15) { gameCheck = 0; CheckGame(); }   // half a second, so alt-tab out brings it back quickly
         if (asleepForGame) return;
         if (!open) { if (AtBottomEdge()) { if (!openIntent.IsEnabled) openIntent.Start(); } else openIntent.Stop(); return; }
+        if (dragging) { hideTimer.Stop(); return; }   // never sink under a drag, even one pulled up and off
         if (!settings.HideUntilHover) return;
         if (PointerOverDock()) hideTimer.Stop();
         else if (!hideTimer.IsEnabled) { hideTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(150, settings.HideDelayMs)); hideTimer.Start(); }
