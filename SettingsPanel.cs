@@ -50,6 +50,7 @@ class SettingsPanel : Window
         Clay = Color.FromRgb(0xB8, 0x92, 0x4C), ClayHi = Color.FromRgb(0xDD, 0xB8, 0x70), ClayLo = Color.FromRgb(0x6E, 0x52, 0x26), Well = Color.FromRgb(0x06, 0x12, 0x1C), WellEdge = Color.FromRgb(0x10, 0x20, 0x2A);
     static readonly FontFamily Font = new("Exo 2, Segoe UI"), Body = new("Figtree, Segoe UI");
     const double PanelW = 452, Slice = 32, ControlW = 196;
+    static readonly double[] DockSizes = [.85, 1, 1.15, 1.3];
 
     // one row: what it shows and what its control does
     abstract record Item(string Label, string? Note);
@@ -159,6 +160,8 @@ class SettingsPanel : Window
                 }),
             ]),
             ("Dock", [
+                // sheet 23 (his pick B, 2026-11-04): also behind Start's extra seal; the dock rises to show each step
+                new Slide("Size", ["Small", "Normal", "Large", "Larger"], () => Math.Max(0, Array.IndexOf(DockSizes, Settings.Load().DockScale)), i => Save(Settings.Load() with { DockScale = DockSizes[i] })),
                 new Switch("Hide until the edge", () => Settings.Load().HideUntilHover, v => Save(Settings.Load() with { HideUntilHover = v }), "Dock and top bar"),
                 new Slide("Sinks after", ["0.4 s", "0.9 s", "1.5 s", "3 s"], () => Math.Max(0, Array.IndexOf(sinks, Settings.Load().HideDelayMs)), i => Save(Settings.Load() with { HideDelayMs = sinks[i] })),
                 new Pick("Names appear", ["Never", "Quickly", "After a pause", "Slowly"], () => Math.Max(0, Array.IndexOf(names, Settings.Load().LabelDelayMs)), i => Save(Settings.Load() with { LabelDelayMs = names[i] })),

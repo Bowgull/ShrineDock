@@ -223,7 +223,7 @@ class StripWindow : Window
         var shown = order.Where(here.Contains).Concat(order.Where(h => !here.Contains(h))).ToList();
         var fg = GetForegroundWindow();
         Tock();
-        if (tiles.Select(t => t.hwnd).SequenceEqual(shown) && here.Count == hereCount) { foreach (var t in tiles) Pip(t.pip, t.hwnd == fg); return; }
+        if (tiles.Select(t => t.hwnd).SequenceEqual(shown) && here.Count == hereCount) { foreach (var t in tiles) Pip(t.pip, t.hwnd == fg, t.hwnd); return; }
         hereCount = here.Count;
         Hover(-1); row.Children.Clear(); tiles.Clear();
         double split = here.Count > 0 && here.Count < shown.Count ? AwayGap : 0;
@@ -340,7 +340,7 @@ class StripWindow : Window
         RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
         tile.Child = img;
         var pip = new Border { Height = 4, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush(Cyan), Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 8, ShadowDepth = 0 } };
-        Canvas.SetTop(pip, Tile + 6); Pip(pip, h == fg);
+        Canvas.SetTop(pip, Tile + 6); Pip(pip, h == fg, h);
         host.Children.Add(tile); host.Children.Add(pip);
         tile.MouseEnter += (_, _) => Hover(i);
         tile.MouseLeave += (_, _) => { if (hovered == i) Hover(-1); };
@@ -349,10 +349,14 @@ class StripWindow : Window
         tiles.Add((h, tile, scale, lift, pip));
         return host;
     }
-    static void Pip(Border p, bool active)
+    static readonly Color Amber = Color.FromRgb(0xFF, 0xA5, 0x3A);
+    static void Pip(Border p, bool active, IntPtr h)
     {
-        p.Width = active ? 20 : 10; Canvas.SetLeft(p, (Tile - p.Width) / 2);
-        p.Background = new SolidColorBrush(active ? Color.FromRgb(0xA8, 0xEC, 0xFF) : Cyan);
+        // sheet 22: a window that wants him has an amber pip, wide like the active one, until he goes to it
+        bool wants = Attention.Wants(h);
+        p.Width = active || wants ? 20 : 10; Canvas.SetLeft(p, (Tile - p.Width) / 2);
+        var c = wants ? Amber : active ? Color.FromRgb(0xA8, 0xEC, 0xFF) : Cyan;
+        p.Background = new SolidColorBrush(c); if (p.Effect is DropShadowEffect fx) fx.Color = wants ? Amber : Cyan;
     }
 
     // ---- hover: only the tile under the mouse lifts; after the label delay, its name and a live preview

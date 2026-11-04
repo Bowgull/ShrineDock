@@ -154,7 +154,9 @@ static class Program
 // Windows' own Start instead (missing reads as false, so ours is the default)
 record Settings(bool HideUntilHover = true, int HideDelayMs = 900, int LabelDelayMs = 600, bool LockWidgets = false, string[]? Pinned = null, string[]? Hidden = null, int ClockX = 1488, int ClockY = 60, int ClockSize = 400, bool FreeScreen2 = false,
     string[]? StartPins = null, string[]? StartRecent = null, bool WindowsStart = false, bool ForgetLevels = false,
-    string[]? Order = null)   // the dock's order after he drags (built-in keys, "pin:<launch>" for his pins)
+    string[]? Order = null,   // the dock's order after he drags (built-in keys, "pin:<launch>" for his pins)
+    double DockScale = 1,     // the dock's size (Start's Dock size seal, settings' Dock page)
+    long DownloadsSeen = 0)   // when he last looked at Downloads from Start (UTC ticks), for the amber dot
 {
     public static string Path => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ShrineDock", "settings.json");
     public static Settings Load()
@@ -164,6 +166,7 @@ record Settings(bool HideUntilHover = true, int HideDelayMs = 900, int LabelDela
         // a settings file from an older dock has no clock entries; those read as 0, so give them their defaults
         if (s.ClockSize <= 0) s = s with { ClockSize = 400 };
         if (s.ClockX <= 0 && s.ClockY <= 0) s = s with { ClockX = 1488, ClockY = 60 };
+        if (s.DockScale <= 0) s = s with { DockScale = 1 };
         return s;
     }
     public static void Save(Settings s)
@@ -209,7 +212,7 @@ class DockWindow : Window
     Rect area;
     bool open, asleepForGame;
     int hovered = -1;
-    double winW, winH;
+    double winW, winH, scale = 1;
     Rect screen;
 
     public DockWindow(Rect area, EventWaitHandle? hello)
@@ -223,6 +226,8 @@ class DockWindow : Window
         Loaded += (_, _) =>
         {
             Place(); SetClickThrough(true); Program.Log($"placed {Left},{Top} {Width}x{Height} screen {screen}");
+            Attention.Listen(new WindowInteropHelper(this).Handle);
+            Attention.Changed += OnAttention; OnAttention();
             HwndSource.FromHwnd(new WindowInteropHelper(this).Handle).AddHook((IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) =>
             {
                 if (msg == 0x007E /*WM_DISPLAYCHANGE*/) DisplayChanged?.Invoke();
@@ -230,7 +235,7 @@ class DockWindow : Window
             });
         };
         Live.Add(this);
-        Closed += (_, _) => { Live.Remove(this); poll.Stop(); running.Stop(); hideTimer.Stop(); labelTimer.Stop(); openIntent.Stop(); watcher?.Dispose(); };
+        Closed += (_, _) => { Attention.Changed -= OnAttention; Live.Remove(this); poll.Stop(); running.Stop(); hideTimer.Stop(); labelTimer.Stop(); openIntent.Stop(); watcher?.Dispose(); };
         poll.Tick += (_, _) => Track();
         poll.Start();
         hideTimer.Tick += (_, _) => { hideTimer.Stop(); if (!PointerOverDock()) Sink(); };
@@ -244,8 +249,9 @@ class DockWindow : Window
         {
             await Task.Delay(200); // let the writer finish, or the read sees a half-written file and falls back to defaults
             var old = settings; settings = Settings.Load();
-            string Pins(Settings s) => string.Join("\n", s.Pinned ?? []) + "/" + string.Join("\n", s.Hidden ?? []) + "/" + string.Join("\n", s.Order ?? []);
+            string Pins(Settings s) => string.Join("\n", s.Pinned ?? []) + "/" + string.Join("\n", s.Hidden ?? []) + "/" + string.Join("\n", s.Order ?? []) + "/" + s.DockScale;
             if (Pins(old) != Pins(settings)) Rebuild();
+            if (old.DockScale != settings.DockScale && !open) SayHello();   // show the new size while he slides
             if (!settings.HideUntilHover) Rise();
             SettingsChanged?.Invoke();
         });
@@ -295,7 +301,11 @@ class DockWindow : Window
         int n = Apps.Length, fi = Array.FindIndex(Apps, a => a.Key == "files");
         double slabW = n * Slot + (n - 1) * Gap + (fi >= 0 && fi < n - 1 ? Gap + 14 : 0); // the row of tiles, with the wider gap after File Explorer
         winW = slabW + 80; winH = SlabH + LabelRoom + Bottom + 20;
-        Width = winW; Height = winH;
+        scale = Math.Clamp(settings.DockScale, .6, 1.6);
+        root.LayoutTransform = scale == 1 ? Transform.Identity : new ScaleTransform(scale, scale);
+        root.Width = winW; root.Height = winH;
+        Width = winW * scale; Height = winH * scale;
+        rings.Clear(); seamCalling = null;
 
         var group = new Canvas { RenderTransform = rise };
         double x = (winW - slabW) / 2, slotTop = winH - Bottom - SlabH + (SlabH - Slot) / 2;
@@ -336,7 +346,11 @@ class DockWindow : Window
         };
         var img = new Image { Source = a.Icon.StartsWith("exe:") ? StripWindow.FromExe(a.Icon[4..]) : a.Icon.StartsWith("file:") ? LoadFile(a.Icon[5..]) : Load(a.Icon), Width = a.Size, Height = a.Size, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         RenderOptions.SetBitmapScalingMode(img, a.Pixel ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
-        slot.Child = img;
+        // sheet 22: an amber rim while this app wants him (it rides the tile's lift and bounce)
+        var ring = new Border { CornerRadius = new CornerRadius(13), Margin = new Thickness(3), BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(Amber),
+            Effect = new DropShadowEffect { Color = Amber, BlurRadius = 14, ShadowDepth = 0, Opacity = .85 }, Opacity = 0, IsHitTestVisible = false };
+        rings.Add(ring);
+        slot.Child = new Grid { Children = { img, ring } };
         var pip = new Border { Width = 14, Height = 4, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush(Color.FromRgb(0x38, 0xC6, 0xFF)), Opacity = 0,
             Effect = new DropShadowEffect { Color = Color.FromRgb(0x38, 0xC6, 0xFF), BlurRadius = 8, ShadowDepth = 0 } };
         Canvas.SetLeft(pip, (Slot - 14) / 2); Canvas.SetTop(pip, Slot + 7); // a soft rounded pip
@@ -351,12 +365,12 @@ class DockWindow : Window
         slot.MouseLeftButtonDown += (_, e) =>
         {
             if (a.Key == "start") return;
-            dragFrom = i; dragTarget = -1; dragging = false; downAt = e.GetPosition(this); slot.CaptureMouse(); e.Handled = true;
+            dragFrom = i; dragTarget = -1; dragging = false; downAt = e.GetPosition(root); slot.CaptureMouse(); e.Handled = true;
         };
         slot.MouseMove += (_, e) =>
         {
             if (dragFrom != i || !slot.IsMouseCaptured) return;
-            var p = e.GetPosition(this);
+            var p = e.GetPosition(root);
             if (!dragging && (Math.Abs(p.X - downAt.X) > 6 || Math.Abs(p.Y - downAt.Y) > 6)) { dragging = true; labelTimer.Stop(); Fade(label, 0, 100); }
             if (dragging) DragTo(p);
         };
@@ -364,7 +378,7 @@ class DockWindow : Window
         {
             bool was = dragging && dragFrom == i;
             ending = true; if (slot.IsMouseCaptured) slot.ReleaseMouseCapture(); ending = false;
-            if (was) EndDrag(e.GetPosition(this), img.Source); else LaunchApp(a);
+            if (was) EndDrag(e.GetPosition(root), img.Source); else LaunchApp(a);
             dragFrom = -1; dragging = false;
         };
         slot.LostMouseCapture += (_, _) => { if (!ending && dragging && dragFrom == i) { dragFrom = -1; dragging = false; Rebuild(); } };
@@ -486,20 +500,20 @@ class DockWindow : Window
     void Place()
     {
         screen = area;
-        Left = screen.Left + (screen.Width - winW) / 2;
-        Top = screen.Bottom - winH;
+        Left = screen.Left + (screen.Width - winW * scale) / 2;
+        Top = screen.Bottom - winH * scale;
     }
 
     // ---- where the mouse is
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
     struct POINT { public int X, Y; }
     Point MousePos() { GetCursorPos(out var p); var d = VisualTreeHelper.GetDpi(this); return new Point(p.X / d.DpiScaleX, p.Y / d.DpiScaleY); }
-    bool AtBottomEdge() { var c = MousePos(); return c.Y >= screen.Bottom - 3 && c.X >= Left + 40 && c.X <= Left + winW - 40; }
+    bool AtBottomEdge() { var c = MousePos(); return c.Y >= screen.Bottom - 3 && c.X >= Left + 40 * scale && c.X <= Left + (winW - 40) * scale; }
     bool PointerOverDock()
     {
         var c = MousePos();
-        double slabTop = Top + winH - Bottom - SlabH - 40; // a little room above for the lifted icon and its name
-        return c.X >= Left + 30 && c.X <= Left + winW - 30 && c.Y >= slabTop && c.Y <= screen.Bottom;
+        double slabTop = Top + (winH - Bottom - SlabH - 40) * scale; // a little room above for the lifted icon and its name
+        return c.X >= Left + 30 * scale && c.X <= Left + (winW - 30) * scale && c.Y >= slabTop && c.Y <= screen.Bottom;
     }
 
     int gameCheck;
@@ -519,10 +533,14 @@ class DockWindow : Window
     void Rise()
     {
         if (open || asleepForGame) return;
-        open = true; SetClickThrough(false);
+        open = true; SetClickThrough(false); UpdateSeam();
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         rise.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(320)) { EasingFunction = ease });
         Fade(Group, 1, 200); Fade(seam, 0, 150);
+        // the apps that want him bounce twice once the row is up (his pick: glow while hidden, bounce when he opens it)
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        t.Tick += (_, _) => { t.Stop(); if (!open) return; for (int i = 0; i < tiles.Count; i++) if (i != dragFrom && Calls(tiles[i].app)) Bounce(tiles[i].lift); };
+        t.Start();
     }
     void Sink()
     {
@@ -531,7 +549,7 @@ class DockWindow : Window
         var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
         rise.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(SlabH + Bottom + 30, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
         Fade(Group, 0, 260); Fade(seam, 1, 300);
-        SetClickThrough(true);
+        SetClickThrough(true); UpdateSeam();
     }
     internal void SayHello() { Rise(); var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1800) }; t.Tick += (_, _) => { t.Stop(); if (!PointerOverDock() && settings.HideUntilHover) Sink(); }; t.Start(); }
 
@@ -707,11 +725,54 @@ class DockWindow : Window
 
     void RefreshRunning()
     {
-        foreach (var t in tiles)
-        {
-            bool on = t.app.Process != null && System.Diagnostics.Process.GetProcessesByName(t.app.Process).Length > 0;
-            t.pip.Opacity = on ? 1 : 0;
-        }
+        for (int i = 0; i < tiles.Count; i++) Mark(i);
+    }
+    bool Running(App a) => a.Process != null && System.Diagnostics.Process.GetProcessesByName(a.Process).Length > 0;
+    void Mark(int i)
+    {
+        var t = tiles[i]; bool calls = Calls(t.app);
+        t.pip.Opacity = calls || Running(t.app) ? 1 : 0;
+        var c = calls ? Amber : Cyan;
+        t.pip.Background = new SolidColorBrush(c); if (t.pip.Effect is DropShadowEffect fx) fx.Color = c;
+        if (i < rings.Count) Fade(rings[i], calls ? 1 : 0, 300);
+    }
+
+    // ---- an app wants him (sheet 22 A): the sleeping line glows amber and breathes; up, its tile has an amber rim
+    static readonly Color Amber = Color.FromRgb(0xFF, 0xA5, 0x3A), Cyan = Color.FromRgb(0x38, 0xC6, 0xFF);
+    readonly List<Border> rings = [];
+    bool? seamCalling;
+    static bool Calls(App a) => a.Process != null && Attention.Wants(a.Process, a.Key == "samara" ? "Samara" : null);
+    void OnAttention() { UpdateSeam(); for (int i = 0; i < tiles.Count; i++) Mark(i); }
+    void UpdateSeam()
+    {
+        bool on = Attention.Any && !open;   // only while it sleeps; nothing animates once the row is up
+        if (seamCalling == on) return;
+        seamCalling = on;
+        var c = on ? Amber : Cyan;
+        var brush = new SolidColorBrush(Color.FromArgb(0xB0, c.R, c.G, c.B));
+        var fx = new DropShadowEffect { Color = c, BlurRadius = 12, ShadowDepth = 0, Opacity = .9 };
+        seam.Fill = brush; seam.Effect = fx;
+        if (!on) return;
+        // a slow breath; 20 frames a second is plenty (the dock is a see-through window, every frame costs)
+        var ease = new SineEase { EasingMode = EasingMode.EaseInOut }; var d = TimeSpan.FromSeconds(1.3);
+        var blur = new DoubleAnimation(8, 22, d) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = ease };
+        var glow = new ColorAnimation(Color.FromArgb(0x90, c.R, c.G, c.B), Color.FromArgb(0xFF, c.R, c.G, c.B), d) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = ease };
+        Timeline.SetDesiredFrameRate(blur, 20); Timeline.SetDesiredFrameRate(glow, 20);
+        fx.BeginAnimation(DropShadowEffect.BlurRadiusProperty, blur);
+        brush.BeginAnimation(SolidColorBrush.ColorProperty, glow);
+    }
+    /// <summary>Two hops, the second smaller (sheet 22).</summary>
+    static void Bounce(TranslateTransform lift)
+    {
+        var k = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(1100), FillBehavior = FillBehavior.Stop };
+        var up = new CubicEase { EasingMode = EasingMode.EaseOut }; var down = new CubicEase { EasingMode = EasingMode.EaseIn };
+        k.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromPercent(0)));
+        k.KeyFrames.Add(new EasingDoubleKeyFrame(-24, KeyTime.FromPercent(.24), up));
+        k.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromPercent(.48), down));
+        k.KeyFrames.Add(new EasingDoubleKeyFrame(-11, KeyTime.FromPercent(.70), up));
+        k.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromPercent(.90), down));
+        k.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromPercent(1)));
+        lift.BeginAnimation(TranslateTransform.YProperty, k);
     }
 
     // ---- games, like Windows (his pick 2026-11-02): out of sight while WoW or Cemu is the window in front on this

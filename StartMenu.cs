@@ -79,7 +79,15 @@ class StartMenu : Window
         {
             Margin = new Thickness(16, 16, 16, 16), RenderTransform = lift,
             Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 22, ShadowDepth = 10, Direction = 270, Opacity = .6 },
-            Children = { frame, crest },
+            Children = { frame, crest, fanLayer },
+        };
+        // a click in Start but away from the fan puts the fan away (his rule: click out closes)
+        PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (!fanOpen || e.OriginalSource is not DependencyObject d) return;
+            for (var x = d; x != null; x = x is Visual || x is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(x) : LogicalTreeHelper.GetParent(x))
+                if (x == more || opts.Any(o => o.seal == x)) return;
+            CloseFan();
         };
 
         AppCatalog.Changed += Redraw;
@@ -172,6 +180,12 @@ class StartMenu : Window
         seal.MouseLeftButtonUp += (_, _) => Power(seal);
         // sheet 21 (2026-11-03): the Tasks seal beside it opens Shrine Tasks, the simple Task Manager
         var tasks = Seal("", "Tasks"); tasks.Margin = new Thickness(0, 0, 8, 0);
+        // sheet 23 B (his pick, 2026-11-04): the extra seal; its four fan out in a half circle above it
+        more = Seal("", "More"); more.Margin = new Thickness(0, 0, 8, 0);
+        if (NewDownloads() > 0) more.Children.Add(new Ellipse { Width = 9, Height = 9, Fill = new SolidColorBrush(AmberC), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -1, -1, 0), IsHitTestVisible = false, Effect = new DropShadowEffect { Color = AmberC, BlurRadius = 6, ShadowDepth = 0 } });
+        more.MouseLeftButtonUp += (_, e) => { e.Handled = true; if (fanOpen) CloseFan(); else OpenFan(); };
+        more.MouseLeave += (_, _) => { if (fanOpen) more.Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 12, ShadowDepth = 0, Opacity = .7 }; };
         // opened a moment after Start has gone: opened inside the click, Tasks inherited Start's mouse capture and its
         // keys (Esc, arrows) went nowhere (tested 2026-11-03)
         tasks.MouseLeftButtonUp += (_, _) =>
@@ -184,17 +198,17 @@ class StartMenu : Window
         // one 36 px band for all three, lifted 18 px so the seals clear the frame's 32 px corner seals; the sides line up
         // with the pins' outer edges (the list runs 4 px wider than the frame's inside, each tile 3 px in)
         var foot = new DockPanel { Margin = new Thickness(-1, 10, -1, 18), Height = 36, LastChildFill = false };
-        DockPanel.SetDock(seal, Dock.Right); DockPanel.SetDock(tasks, Dock.Right);
-        foot.Children.Add(allPlate); foot.Children.Add(seal); foot.Children.Add(tasks);
+        DockPanel.SetDock(seal, Dock.Right); DockPanel.SetDock(tasks, Dock.Right); DockPanel.SetDock(more, Dock.Right);
+        foot.Children.Add(allPlate); foot.Children.Add(seal); foot.Children.Add(tasks); foot.Children.Add(more);
         return foot;
     }
-    static Grid Seal(string glyph, string tip)
+    static Grid Seal(string glyph, string tip, double size = 36)
     {
-        var seal = new Grid { Width = 36, Height = 36, Cursor = Cursors.Hand, ToolTip = tip };
+        var seal = new Grid { Width = size, Height = size, Cursor = Cursors.Hand, ToolTip = tip };
         seal.Children.Add(new Ellipse { Fill = new RadialGradientBrush(new GradientStopCollection {
             new(Color.FromRgb(0x0A, 0x1C, 0x2C), 0), new(Color.FromRgb(0x0A, 0x1C, 0x2C), .52), new(ClayLo, .54), new(ClayLo, .60), new(Clay, .62), new(Clay, .78), new(ClayHi, .80), new(ClayHi, .86), new(Color.FromRgb(0x3E, 0x2C, 0x16), .88), new(Color.FromRgb(0x3E, 0x2C, 0x16), 1) }),
             Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 4, ShadowDepth = 2, Direction = 270, Opacity = .5 } });
-        seal.Children.Add(new TextBlock { Text = glyph, FontFamily = Glyphs, FontSize = 14, Foreground = new SolidColorBrush(Ice), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+        seal.Children.Add(new TextBlock { Text = glyph, FontFamily = Glyphs, FontSize = size > 40 ? 18 : 14, Foreground = new SolidColorBrush(Ice), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
             Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 6, ShadowDepth = 0 } });
         seal.MouseEnter += (_, _) => seal.Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 12, ShadowDepth = 0, Opacity = .6 };
         seal.MouseLeave += (_, _) => seal.Effect = null;
@@ -300,7 +314,8 @@ class StartMenu : Window
         switch (e.Key)
         {
             case System.Windows.Input.Key.Escape:
-                if (query.Text.Length > 0) query.Text = "";
+                if (fanOpen) CloseFan();
+                else if (query.Text.Length > 0) query.Text = "";
                 else if (showAll) { showAll = false; cur = 0; Draw(); }
                 else Close();
                 break;
@@ -382,6 +397,153 @@ class StartMenu : Window
         ], p, upward: true);
         static void Run(string args) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown.exe", args) { CreateNoWindow = true, UseShellExecute = false }); } catch (Exception ex) { Program.Log("start: power: " + ex.Message); } }
     }
+
+    // ---- the extra seal's fan (sheet 23 B): Downloads, Recycle Bin, Dock size, Dock icons
+    static readonly Color AmberC = Color.FromRgb(0xFF, 0xA5, 0x3A);
+    Grid more = new();
+    readonly Canvas fanLayer = new() { IsHitTestVisible = false };
+    readonly List<(Grid seal, TextBlock label, TranslateTransform move, ScaleTransform grow)> opts = [];
+    bool fanOpen;
+    static readonly (double x, double y)[] FanAt = [(-87, -52), (-34, -96), (34, -96), (87, -52)];
+    const double OptSize = 46;
+
+    void OpenFan()
+    {
+        fanOpen = true; fanLayer.Children.Clear(); opts.Clear();
+        var c = more.TranslatePoint(new Point(18, 18), fanLayer);
+        // a dark pool behind them so they read over the list, which dims
+        var pool = new Ellipse { Width = 300, Height = 240, IsHitTestVisible = false, Opacity = 0,
+            Fill = new RadialGradientBrush(new GradientStopCollection { new(Color.FromArgb(0xEC, 0x04, 0x10, 0x1A), 0), new(Color.FromArgb(0xC0, 0x04, 0x10, 0x1A), .45), new(Color.FromArgb(0, 0x04, 0x10, 0x1A), 1) }) };
+        Canvas.SetLeft(pool, c.X - 150); Canvas.SetTop(pool, c.Y - 150); fanLayer.Children.Add(pool);
+        pool.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(200)));
+        scroll.BeginAnimation(OpacityProperty, new DoubleAnimation(.5, TimeSpan.FromMilliseconds(200)));
+        (string glyph, string name, Action act)[] things =
+        [
+            ("", "Downloads", Downloads), ("", "Recycle Bin", RecycleBin),
+            ("", "Dock size", () => { Close(); SettingsPanel.OpenOn("Dock"); }), ("", "Dock icons", DockIcons),
+        ];
+        for (int i = 0; i < things.Length; i++)
+        {
+            var (glyph, name, act) = things[i];
+            var s = Seal(glyph, name, OptSize); s.ToolTip = null;
+            var move = new TranslateTransform(); var grow = new ScaleTransform(.4, .4, OptSize / 2, OptSize / 2);
+            s.RenderTransform = new TransformGroup { Children = { grow, move } }; s.Opacity = 0;
+            Canvas.SetLeft(s, c.X - OptSize / 2); Canvas.SetTop(s, c.Y - OptSize / 2);
+            var label = new TextBlock { Text = name, FontFamily = Font, FontWeight = FontWeights.SemiBold, FontSize = 12, Foreground = new SolidColorBrush(Ice), Opacity = 0, IsHitTestVisible = false,
+                Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 4, ShadowDepth = 1, Opacity = .8 } };
+            fanLayer.Children.Add(s); fanLayer.Children.Add(label);
+            label.Loaded += (_, _) => { Canvas.SetLeft(label, c.X + FanAt[opts.FindIndex(o => o.label == label)].x - label.ActualWidth / 2); Canvas.SetTop(label, c.Y + FanAt[opts.FindIndex(o => o.label == label)].y - OptSize / 2 - 20); };
+            s.MouseEnter += (_, _) => label.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(120)));
+            s.MouseLeave += (_, _) => label.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(120)));
+            s.MouseLeftButtonUp += (_, e) => { e.Handled = true; act(); };
+            opts.Add((s, label, move, grow));
+            // out of the seal, one after another, with a small overshoot
+            var begin = TimeSpan.FromMilliseconds(40 * i); var d = TimeSpan.FromMilliseconds(320); var back = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = .5 };
+            move.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(FanAt[i].x, d) { BeginTime = begin, EasingFunction = back });
+            move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(FanAt[i].y, d) { BeginTime = begin, EasingFunction = back });
+            grow.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, d) { BeginTime = begin, EasingFunction = back });
+            grow.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1, d) { BeginTime = begin, EasingFunction = back });
+            s.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(180)) { BeginTime = begin });
+        }
+        fanLayer.IsHitTestVisible = true;
+        more.Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 12, ShadowDepth = 0, Opacity = .7 };
+    }
+    void CloseFan()
+    {
+        if (!fanOpen) return;
+        fanOpen = false; fanLayer.IsHitTestVisible = false; more.Effect = null;
+        var d = TimeSpan.FromMilliseconds(170); var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
+        foreach (var (s, label, move, grow) in opts)
+        {
+            move.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, d) { EasingFunction = ease });
+            move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, d) { EasingFunction = ease });
+            grow.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(.4, d)); grow.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(.4, d));
+            s.BeginAnimation(OpacityProperty, new DoubleAnimation(0, d)); label.Opacity = 0;
+        }
+        foreach (var p in fanLayer.Children.OfType<Ellipse>()) p.BeginAnimation(OpacityProperty, new DoubleAnimation(0, d));
+        scroll.BeginAnimation(OpacityProperty, new DoubleAnimation(1, d));
+    }
+
+    static string DownloadsDir => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + @"\Downloads";
+    static int NewDownloads()
+    {
+        try
+        {
+            var seen = new DateTime(Math.Max(0, Settings.Load().DownloadsSeen), DateTimeKind.Utc);
+            if (seen.Ticks == 0) return 0;   // never looked yet: no dot on the first day
+            return new System.IO.DirectoryInfo(DownloadsDir).EnumerateFileSystemInfos().Count(f => f.CreationTimeUtc > seen && !f.Name.StartsWith('.') && !f.Name.EndsWith(".crdownload") && !f.Name.EndsWith(".part"));
+        }
+        catch { return 0; }
+    }
+    Point FanPoint(int i) { var p = opts[i].seal.PointToScreen(new Point(OptSize / 2, 0)); var d = VisualTreeHelper.GetDpi(this); return new Point(p.X / d.DpiScaleX, p.Y / d.DpiScaleY); }
+    // Downloads: the newest few, a click opens one; and the folder itself
+    void Downloads()
+    {
+        var s = Settings.Load(); Settings.Save(s with { DownloadsSeen = DateTime.UtcNow.Ticks });
+        more.Children.OfType<Ellipse>().ToList().ForEach(e => more.Children.Remove(e));
+        var items = new List<MenuEntry?>();
+        try
+        {
+            foreach (var f in new System.IO.DirectoryInfo(DownloadsDir).EnumerateFiles().Where(f => !f.Name.StartsWith('.') && !f.Name.EndsWith(".crdownload") && !f.Name.EndsWith(".part") && !f.Name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(f => f.CreationTimeUtc).Take(6))
+            {
+                var name = f.Name.Length > 34 ? f.Name[..32] + "…" : f.Name; var path = f.FullName;
+                items.Add(new(name, () => { Close(); Shell(path); }));
+            }
+        }
+        catch (Exception e) { Program.Log("start: downloads " + e.Message); }
+        if (items.Count > 0) items.Add(null);
+        items.Add(new("Open the Downloads folder", () => { Close(); Shell(DownloadsDir); }));
+        ShrineMenu.Open("Downloads", null, items, FanPoint(0), upward: true);
+    }
+    // Recycle Bin: open it; emptying asks first (his rule for anything hard to undo)
+    void RecycleBin()
+    {
+        int n = 0;
+        try { dynamic sh = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!; n = sh.NameSpace(10).Items().Count; } catch { }
+        var at = FanPoint(1);
+        var items = new List<MenuEntry?> { new("Open Recycle Bin", () => { Close(); Shell("shell:RecycleBinFolder"); }) };
+        if (n > 0) items.Add(new($"Empty it ({n} item{(n == 1 ? "" : "s")})", () =>
+            ShrineMenu.Confirm($"Empty the Recycle Bin? {(n == 1 ? "1 item is" : $"{n} items are")} gone for good.", null, "Yes, empty it", () => SHEmptyRecycleBin(IntPtr.Zero, null, 7), at, upward: true), Warn: true));
+        ShrineMenu.Open(n == 0 ? "Recycle Bin is empty" : "Recycle Bin", null, items, at, upward: true);
+    }
+    // Dock icons: a picture of his own for an app he pinned himself (the built-ins have their painted art)
+    void DockIcons()
+    {
+        var pins = Settings.Load().Pinned ?? [];
+        var items = new List<MenuEntry?>();
+        foreach (var p in pins)
+        {
+            var b = p.Split('|'); if (b.Length < 2) continue;
+            var entry = p;
+            items.Add(new(b[0], () => { Close(); PickIcon(entry); }));
+            if (b.Length == 3 && !b[1].StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+                items.Add(new($"   {b[0]}: its own icon again", () => SetPin(entry, $"{b[0]}|{b[1]}")));
+        }
+        if (items.Count == 0) items.Add(new("No apps of your own on the dock yet", () => { }));
+        ShrineMenu.Open("Pick a picture for", null, items, FanPoint(3), upward: true);
+    }
+    static void PickIcon(string entry)
+    {
+        var b = entry.Split('|');
+        var dlg = new Microsoft.Win32.OpenFileDialog { Title = $"A picture for {b[0]}", Filter = "Pictures|*.png;*.ico;*.jpg;*.jpeg;*.gif;*.bmp" };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            var dir = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Settings.Path)!, "pins"); System.IO.Directory.CreateDirectory(dir);
+            var file = System.IO.Path.Combine(dir, string.Concat(b[0].Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')) + "-own" + System.IO.Path.GetExtension(dlg.FileName));
+            System.IO.File.Copy(dlg.FileName, file, true);
+            SetPin(entry, $"{b[0]}|{b[1]}|{file}");
+        }
+        catch (Exception e) { Program.Log("start: dock icon " + e.Message); }
+    }
+    static void SetPin(string old, string now)
+    {
+        var s = Settings.Load();
+        Settings.Save(s with { Pinned = [.. (s.Pinned ?? []).Select(p => p == old ? now : p)] });
+    }
+    static void Shell(string what) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{what}\"") { UseShellExecute = true }); } catch (Exception e) { Program.Log("start: open " + e.Message); } }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int SHEmptyRecycleBin(IntPtr hwnd, string? root, uint flags);
 
     // ---- plumbing
     static BitmapImage Art(string file) { var b = new BitmapImage(new Uri(System.IO.Path.Combine(AppContext.BaseDirectory, "art", file))); b.Freeze(); return b; }
