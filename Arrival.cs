@@ -48,7 +48,7 @@ static class Arrival
     }
     public static void DisplayChanged() => lastDisplayChange = DateTime.Now;
 
-    static bool InGame() => Process.GetProcessesByName("WowB").Length > 0 || Process.GetProcessesByName("Cemu").Length > 0;
+    static bool InGame() => Process.GetProcessesByName("WowB").Length > 0 || Process.GetProcessesByName("Wow").Length > 0 || Process.GetProcessesByName("Cemu").Length > 0;
 
     /// <summary>Everything that should wait for its turn steps out of sight (used on lock/disconnect and before a start).</summary>
     public static void Hide()

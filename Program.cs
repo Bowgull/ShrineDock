@@ -181,11 +181,12 @@ class DockWindow : Window
     [
         new("start", "emblem.png", 44, false, "start", null, null, "Start"),
         new("files", "folder.png", 34, false, "explorer.exe", null, null, "File Explorer", true),
-        new("wow", "rail-wow.png", 50, false, "wscript.exe", "\"C:\\Users\\Shadow\\Documents\\Rainmeter\\Skins\\BloodWired\\@Resources\\Scripts\\launch_app.vbs\" wow", "WowB", "WoW: Forever"),
+        new("wow", "rail-wow.png", 50, false, "wscript.exe", "\"C:\\Users\\Shadow\\Documents\\Rainmeter\\Skins\\BloodWired\\@Resources\\Scripts\\launch_app.vbs\" wow", "Wow", "WoW: Forever"),
         new("samara", "rail-samara.png", 64, true, @"C:\Users\Shadow\Desktop\Samara.lnk", null, "electron", "Samara"),
         new("claude", "icon-claude.png", 40, false, @"shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude", null, "claude", "Claude"),
         new("aang", "rail-aang.png", 54, true, @"C:\Users\Shadow\Desktop\Aang.lnk", null, "Aang", "Aang"),
-        new("cemu", "icon-cemu.png", 40, false, @"C:\Users\Shadow\Desktop\Cemu.lnk", null, "Cemu", "Cemu"),
+        // Breath of the Wild in place of Cemu (his pick 2026-11-04): one click starts the game full screen
+        new("botw", "icon-botw.png", 52, false, CemuExe, $"-f -g \"{BotW}\"", "Cemu", "Breath of the Wild"),
     ];
     // 85% of the first size (he found it a little large); Samara and Aang stay at their 1:1 pixel sizes
     const double Slot = 72, Gap = 10, SlabH = 94, LabelRoom = 70, Bottom = 14;
@@ -508,9 +509,9 @@ class DockWindow : Window
                 Do("Show all pop-outs", "popouts-show"); Do("Hide all pop-outs", "popouts-hide");
                 if (AangRunning) { Do("New note", "new-note"); Do("Timer", "timer"); Do("Music player", "player"); }
                 break;
-            // Cemu: straight into Breath of the Wild
-            case "cemu" when System.Diagnostics.Process.GetProcessesByName("Cemu").Length == 0 && File.Exists(BotW):
-                items.Add(new("Play Breath of the Wild", () => Run(CemuExe, $"-g \"{BotW}\"", System.IO.Path.GetDirectoryName(CemuExe))));
+            // Breath of the Wild: Cemu on its own, for settings and other games
+            case "botw" when System.Diagnostics.Process.GetProcessesByName("Cemu").Length == 0:
+                items.Add(new("Open Cemu only", () => Run(CemuExe, "", System.IO.Path.GetDirectoryName(CemuExe))));
                 break;
         }
         return items.Count > before;
