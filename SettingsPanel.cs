@@ -215,7 +215,7 @@ class SettingsPanel : Window
             int k = i; bool on = i == page;
             var t = new Border
             {
-                Width = w, Margin = new Thickness(i == 0 ? 0 : 4, 0, 0, 0), Padding = new Thickness(0, 7, 0, 6), Cursor = Cursors.Hand, BorderThickness = new Thickness(2),
+                Width = w, Margin = new Thickness(i == 0 ? 0 : 4, 0, 0, 0), Padding = new Thickness(0, 7, 0, 6), Cursor = Cursors.Hand, BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(9),   // soft edges
                 Background = on ? new LinearGradientBrush(Color.FromRgb(0x2A, 0x20, 0x10), Color.FromRgb(0x1A, 0x14, 0x0A), 90) : new SolidColorBrush(Color.FromRgb(0x07, 0x14, 0x20)),
                 BorderBrush = new SolidColorBrush(on ? Clay : WellEdge),
                 Effect = on ? new DropShadowEffect { Color = ClayHi, BlurRadius = 10, ShadowDepth = 0, Opacity = .3 } : null,
@@ -261,15 +261,24 @@ class SettingsPanel : Window
         Cursor(Math.Min(cur, live.Count - 1));
     }
 
+    // the game cursor (sheet 24 B, his pick 2026-11-04): the Shrine gauntlet, a bronze cuff with the rail's joints and a
+    // cyan gem, pointing at the row you're on; drawn at 2x, shown smooth at 20x13, a soft shadow under it, no glow
+    static FrameworkElement Finger()
+    {
+        var img = new Image { Source = new BitmapImage(new Uri(System.IO.Path.Combine(AppContext.BaseDirectory, "art", "finger.png"))), Width = 20, Height = 13,
+            Opacity = 0, IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(-25, 0, 0, 0),
+            Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 4, ShadowDepth = 1.5, Direction = 270, Opacity = .55 }, RenderTransform = new TranslateTransform() };
+        RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+        return img;
+    }
+
     // a row's frame: the game cursor arrow and the stripe (shared by the setting rows and the mixer's rows)
     Border Framed(int i, Grid g, double right = 10)
     {
-        var arrow = new Polygon { Points = new PointCollection { new(0, 0), new(9, 6), new(0, 12) }, Fill = new SolidColorBrush(Cyan), Opacity = 0, IsHitTestVisible = false,
-            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(-18, 0, 0, 0),
-            Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 6, ShadowDepth = 0 }, RenderTransform = new TranslateTransform() };
+        var arrow = Finger();
         ((TranslateTransform)arrow.RenderTransform).BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, 3, TimeSpan.FromMilliseconds(500)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
         var host = new Grid(); host.Children.Add(g); host.Children.Add(arrow);
-        var row = new Border { Padding = new Thickness(26, 0, right, 0), Child = host, Tag = arrow, Background = Brushes.Transparent };
+        var row = new Border { Padding = new Thickness(26, 0, right, 0), CornerRadius = new CornerRadius(10), Child = host, Tag = arrow, Background = Brushes.Transparent };
         row.MouseEnter += (_, _) => Cursor(i);
         return row;
     }
@@ -286,12 +295,10 @@ class SettingsPanel : Window
         Grid.SetColumn(ctrl, 1); ctrl.HorizontalAlignment = HorizontalAlignment.Right; ctrl.VerticalAlignment = VerticalAlignment.Center;
         g.Children.Add(ctrl);
         // the game cursor: a cyan arrow that nudges, on the row you're on
-        var arrow = new Polygon { Points = new PointCollection { new(0, 0), new(9, 6), new(0, 12) }, Fill = new SolidColorBrush(Cyan), Opacity = 0, IsHitTestVisible = false,
-            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(-18, 0, 0, 0),
-            Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 6, ShadowDepth = 0 }, RenderTransform = new TranslateTransform() };
+        var arrow = Finger();
         ((TranslateTransform)arrow.RenderTransform).BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, 3, TimeSpan.FromMilliseconds(500)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
         g.Children.Add(arrow);
-        var row = new Border { Padding = new Thickness(26, 5, 10, 5), Child = g, Cursor = Cursors.Hand, Tag = arrow,
+        var row = new Border { Padding = new Thickness(26, 5, 10, 5), CornerRadius = new CornerRadius(10), Child = g, Cursor = Cursors.Hand, Tag = arrow,
             Background = i % 2 == 1 ? new SolidColorBrush(Color.FromArgb(5, 255, 255, 255)) : Brushes.Transparent };
         row.MouseEnter += (_, _) => Cursor(i);
         live.Add((row, change, redraw));
@@ -331,7 +338,7 @@ class SettingsPanel : Window
                 {
                     val.Text = p.Options[v]; dots.Children.Clear();
                     for (int j = 0; j < p.Options.Length; j++)
-                        dots.Children.Add(new Rectangle { Width = 5, Height = 5, Margin = new Thickness(2, 0, 2, 0), Fill = new SolidColorBrush(j == v ? Cyan : Color.FromRgb(0x1D, 0x3A, 0x50)),
+                        dots.Children.Add(new Rectangle { Width = 5, Height = 5, RadiusX = 2.5, RadiusY = 2.5, Margin = new Thickness(2, 0, 2, 0), Fill = new SolidColorBrush(j == v ? Cyan : Color.FromRgb(0x1D, 0x3A, 0x50)),
                             Effect = j == v ? new DropShadowEffect { Color = Cyan, BlurRadius = 4, ShadowDepth = 0 } : null });
                 }
                 void Change(int d) { v = (v + d + p.Options.Length) % p.Options.Length; Redraw(); p.Set(v); }
@@ -345,7 +352,7 @@ class SettingsPanel : Window
             {
                 bool v = s.Get();
                 var word = new TextBlock { FontFamily = Font, FontStyle = FontStyles.Italic, FontWeight = FontWeights.SemiBold, FontSize = 12.5, Width = 26, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
-                var well = new Border { Width = 52, Height = 22, BorderThickness = new Thickness(2), Background = new SolidColorBrush(Well) };
+                var well = new Border { Width = 52, Height = 22, CornerRadius = new CornerRadius(11), BorderThickness = new Thickness(2), Background = new SolidColorBrush(Well) };
                 var knob = new Ellipse { Width = 16, Height = 16, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(2, 0, 0, 0), RenderTransform = new TranslateTransform() };
                 well.Child = knob;
                 var wrap = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Transparent, Children = { word, well } };
@@ -368,7 +375,7 @@ class SettingsPanel : Window
                 var g = new Grid { Width = ControlW };
                 g.ColumnDefinitions.Add(new ColumnDefinition()); g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
                 var track = new Grid { Height = 24, Background = Brushes.Transparent, Cursor = Cursors.Hand };
-                var well = new Border { Height = 10, BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(WellEdge), Background = new SolidColorBrush(Well), VerticalAlignment = VerticalAlignment.Center };
+                var well = new Border { Height = 10, CornerRadius = new CornerRadius(5), BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(WellEdge), Background = new SolidColorBrush(Well), VerticalAlignment = VerticalAlignment.Center };
                 var canvas = new Canvas { IsHitTestVisible = false };
                 track.Children.Add(well); track.Children.Add(canvas);
                 var val = new TextBlock { FontFamily = Font, FontStyle = FontStyles.Italic, FontWeight = FontWeights.SemiBold, FontSize = 13, Foreground = Brushes.White, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
@@ -376,8 +383,8 @@ class SettingsPanel : Window
                 void Redraw()
                 {
                     canvas.Children.Clear(); double w = track.ActualWidth > 0 ? track.ActualWidth : ControlW - 66, p = (double)v / (sl.Stops.Length - 1);
-                    for (int j = 0; j < sl.Stops.Length; j++) { var n = new Rectangle { Width = 2, Height = 4, Fill = new SolidColorBrush(ClayLo) }; Canvas.SetLeft(n, j * w / (sl.Stops.Length - 1) - 1); Canvas.SetTop(n, 0); canvas.Children.Add(n); }
-                    var fill = new Rectangle { Width = Math.Max(0, p * (w - 4)), Height = 6, Fill = new LinearGradientBrush(Color.FromRgb(0x15, 0x5A, 0x80), Cyan, 0) }; Canvas.SetLeft(fill, 2); Canvas.SetTop(fill, 9); canvas.Children.Add(fill);
+                    for (int j = 0; j < sl.Stops.Length; j++) { var n = new Rectangle { Width = 2, Height = 4, RadiusX = 1, RadiusY = 1, Fill = new SolidColorBrush(ClayLo) }; Canvas.SetLeft(n, j * w / (sl.Stops.Length - 1) - 1); Canvas.SetTop(n, 0); canvas.Children.Add(n); }
+                    var fill = new Rectangle { Width = Math.Max(0, p * (w - 4)), Height = 6, RadiusX = 3, RadiusY = 3, Fill = new LinearGradientBrush(Color.FromRgb(0x15, 0x5A, 0x80), Cyan, 0) }; Canvas.SetLeft(fill, 2); Canvas.SetTop(fill, 9); canvas.Children.Add(fill);
                     var knob = new Ellipse { Width = 18, Height = 18, Fill = Seal(), Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 6, ShadowDepth = 0, Opacity = .7 } };
                     Canvas.SetLeft(knob, p * w - 9); Canvas.SetTop(knob, 3); canvas.Children.Add(knob);
                     val.Text = sl.Stops[v];
@@ -393,7 +400,7 @@ class SettingsPanel : Window
             }
             case Act a:
             {
-                var b = new Border { Padding = new Thickness(14, 6, 14, 6), BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(Clay), Cursor = Cursors.Hand,
+                var b = new Border { Padding = new Thickness(14, 6, 14, 6), CornerRadius = new CornerRadius(9), BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(Clay), Cursor = Cursors.Hand,
                     Background = new LinearGradientBrush(Color.FromRgb(0x3A, 0x2A, 0x12), Color.FromRgb(0x22, 0x18, 0x0A), 90),
                     Child = new TextBlock { Text = a.Button, FontFamily = Font, FontWeight = FontWeights.SemiBold, FontSize = 13, Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xEC, 0xC4)) } };
                 b.MouseEnter += (_, _) => b.Effect = new DropShadowEffect { Color = ClayHi, BlurRadius = 10, ShadowDepth = 0, Opacity = .45 };

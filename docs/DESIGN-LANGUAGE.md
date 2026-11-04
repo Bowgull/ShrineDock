@@ -42,6 +42,9 @@ Every panel is made of the same four things. They come from his own art (`art/fr
 - **Kit icons:** made from the kit's materials. The mixer's PC is a bronze-bezelled monitor with the stone as its screen and cyan gem corners (`art/mixer-pc.png`). Glowing cyan line icons like `folder.png` are also in the language.
 - Thin flat line glyphs drawn in code were rejected for the mixer ("sucks").
 
+## The cursor
+- The row cursor in menus and Settings is the **Shrine gauntlet** (sheet 24 B, his pick): a bronze cuff with the rail's joints and a cyan gem, and ivory fingers lit from the top. It is `art/finger.png` at 2x, shown at 20x13 with a soft shadow and no glow, and it nudges.
+
 ## Layout rules
 - **Line things up, like a table.** In the mixer, the name column is as wide as the longest name showing, no wider. Every bar starts there and takes the rest, so all bars match. No dead gaps.
 - Measure alignment from real pixels before showing him anything.
