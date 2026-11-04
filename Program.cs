@@ -28,6 +28,8 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // the native Reddit feed CPU gate: its own process, before the single-dock lock, so the dock is untouched
+        if (args.Contains("--feed-spike")) { FeedSpike.Run(args); return; }
         if (args.Contains("--settings"))
         {
             // the seal on the desktop opens the settings panel in the running dock
