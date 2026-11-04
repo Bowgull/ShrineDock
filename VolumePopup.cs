@@ -105,7 +105,7 @@ class VolumePopup : Window
             row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
             rows.Children.Add(row);
         }
-        if (mixer.IsQuiet) { if (mixer.Nothing.Parent is Panel p) p.Children.Remove(mixer.Nothing); rows.Children.Add(mixer.Nothing); }
+        // no "Nothing playing right now" line when it's quiet (his ask 2026-11-04: it only took up space)
     }
 
     void Place(Point under)

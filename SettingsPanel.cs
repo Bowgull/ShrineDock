@@ -251,7 +251,7 @@ class SettingsPanel : Window
                         int k = live.Count; live.Add((row, r.Nudge, () => { })); mutes[k] = r.ToggleMute;
                         rows.Children.Add(row);
                     }
-                    if (mixer.IsQuiet) { if (mixer.Nothing.Parent is Panel p) p.Children.Remove(mixer.Nothing); rows.Children.Add(mixer.Nothing); }
+                    // no "Nothing playing right now" line when it's quiet (his ask 2026-11-04: it only took up space)
                     break;
                 default:
                     rows.Children.Add(Row(live.Count, item));
