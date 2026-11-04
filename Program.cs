@@ -597,6 +597,7 @@ class DockWindow : Window
             // (2026-11-02, he found Samara slow to come up from the dock)
             var win = fresh || a.Process == null ? IntPtr.Zero : StripWindow.WindowOf(a.Process, a.Key == "samara" ? "Samara" : null);
             if (win != IntPtr.Zero) { StripWindow.Focus(win); return; }
+            ScreenMove.AfterLaunch(a.Process, screen);   // a new window opens on this dock's screen
             Process.Start(new ProcessStartInfo(a.Launch, a.LaunchArgs ?? "") { UseShellExecute = true });
         }
         catch { /* a missing shortcut should never take the dock down */ }
