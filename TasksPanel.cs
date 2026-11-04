@@ -76,7 +76,7 @@ class TasksPanel : Window
         scroll.Content = body; scroll.Margin = new Thickness(-4, 4, -4, 0); Grid.SetRow(scroll, 2); inner.Children.Add(scroll);
         var foot = Foot(); Grid.SetRow(foot, 3); inner.Children.Add(foot);
 
-        var frame = SettingsPanel.Frame(inner);
+        var frame = SettingsPanel.SoftFrame(inner);
         var lift = new TranslateTransform(0, 16);
         Content = new Grid
         {

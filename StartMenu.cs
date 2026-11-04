@@ -70,7 +70,7 @@ class StartMenu : Window
         scroll.Content = body; scroll.Margin = new Thickness(-4, 12, -4, 0); Grid.SetRow(scroll, 2); inner.Children.Add(scroll);
         var foot = Foot(); Grid.SetRow(foot, 3); inner.Children.Add(foot);
 
-        var frame = SettingsPanel.Frame(inner); frame.Width = W; frame.Height = H;
+        var frame = SettingsPanel.SoftFrame(inner); frame.Width = W; frame.Height = H;
         // the dock's Start emblem rides the top rail as a crest
         var crest = new Image { Source = Art("emblem.png"), Width = 30, Height = 30, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 1, 0, 0),
             Effect = new DropShadowEffect { Color = Cyan, BlurRadius = 8, ShadowDepth = 0, Opacity = .6 }, IsHitTestVisible = false };

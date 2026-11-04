@@ -62,23 +62,15 @@ class ShrineMenu : Window
 
     /// <summary>The pane around a menu's contents (also the strip's volume drop-down): slate with grain-dark depth, a
     /// carved clay rim (lit top, shaded bottom), a cyan inner line and seals in the corners.</summary>
+    // 2026-11-04 (his asks: soft edges, no flat shiny bronze): menus wear the same braided, dark-faded, round frame
+    // as Start, Tasks and Settings (SettingsPanel.SoftFrame), with room for its rail and a soft shadow outside
     internal static Grid Pane(UIElement list)
     {
-        var pane = new Border
-        {
-            CornerRadius = new CornerRadius(18), BorderThickness = new Thickness(2.5), Child = list, Margin = new Thickness(14),
-            Background = new LinearGradientBrush(Color.FromArgb(0xF6, 0x12, 0x2C, 0x42), Color.FromArgb(0xF6, 0x06, 0x10, 0x1A), 90),
-            BorderBrush = new LinearGradientBrush(new GradientStopCollection { new(Color.FromRgb(0xF0, 0xCE, 0x88), 0), new(Color.FromRgb(0xB8, 0x92, 0x4C), .45), new(Color.FromRgb(0x6E, 0x52, 0x26), 1) }, 90),
-            Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 18, ShadowDepth = 5, Direction = 270, Opacity = .6 },
-        };
-        var inner = new Border { CornerRadius = new CornerRadius(15.5), BorderThickness = new Thickness(1), Margin = new Thickness(16.5), IsHitTestVisible = false,
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0x48, 0x38, 0xC6, 0xFF)), Effect = new BlurEffect { Radius = 1.2 } };
-        var grid = new Grid();
-        grid.Children.Add(pane); grid.Children.Add(inner);
-        var seal = new BitmapImage(new Uri(System.IO.Path.Combine(AppContext.BaseDirectory, "art", "menu-seal.png")));
-        foreach (var (h, v) in new[] { (HorizontalAlignment.Left, VerticalAlignment.Top), (HorizontalAlignment.Right, VerticalAlignment.Top), (HorizontalAlignment.Left, VerticalAlignment.Bottom), (HorizontalAlignment.Right, VerticalAlignment.Bottom) })
-            grid.Children.Add(new Image { Source = seal, Width = 20, Height = 20, HorizontalAlignment = h, VerticalAlignment = v, Margin = new Thickness(9.3), IsHitTestVisible = false });
-        // 2026-11-04 (soft edges): rounder corners (18), and the seals sit ON the curve, so it no longer reads as a square box
+        if (list is FrameworkElement fe) fe.Margin = new Thickness(fe.Margin.Left + 9, fe.Margin.Top + 9, fe.Margin.Right + 9, fe.Margin.Bottom + 9);
+        var frame = SettingsPanel.SoftFrame(list);
+        frame.Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 18, ShadowDepth = 5, Direction = 270, Opacity = .6 };
+        var grid = new Grid { Margin = new Thickness(10) };
+        grid.Children.Add(frame);
         return grid;
     }
 

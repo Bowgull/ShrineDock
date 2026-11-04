@@ -91,7 +91,7 @@ class SettingsPanel : Window
         var right = Foot("Esc", " or click outside to close"); DockPanel.SetDock(right, Dock.Right);
         foot.Children.Add(right); foot.Children.Add(Foot("↑↓", " move · ", "←→", " change · ", "Tab", " page"));
         inner.Children.Add(line);
-        var grid = Frame(inner);
+        var grid = SoftFrame(inner);
         Content = new Border { Child = grid, Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 22, ShadowDepth = 10, Direction = 270, Opacity = .6 }, Margin = new Thickness(16) };
         DrawTabs(); DrawPage();
 
@@ -424,6 +424,36 @@ class SettingsPanel : Window
         var t = new TextBlock { FontFamily = Body, FontSize = 11.5, Foreground = new SolidColorBrush(Hint) };
         for (int i = 0; i < parts.Length; i++) t.Inlines.Add(new System.Windows.Documents.Run(parts[i]) { Foreground = i % 2 == 0 ? new SolidColorBrush(ClayHi) : new SolidColorBrush(Hint), FontWeight = i % 2 == 0 ? FontWeights.SemiBold : FontWeights.Normal });
         return t;
+    }
+
+    // Soft edges (his asks 2026-11-04): his frame, drawn round and smooth. frame-soft.png is made at 2x by a script
+    // (rounded corners whose curve runs through the seals, the braided dark-faded rail of his clock and PC widget,
+    // smooth seals): no shiny flat bronze, no pixel steps. Nine-sliced like Frame, shown at half size, smooth.
+    internal static Grid SoftFrame(UIElement content)
+    {
+        var src = new BitmapImage(new Uri(System.IO.Path.Combine(AppContext.BaseDirectory, "art", "frame-soft.png")));
+        const int Z = 2, s = 40;   // the art's scale, and the corner slice in DIPs (the curve and seal fit inside it)
+        int W = src.PixelWidth, H = src.PixelHeight, p = s * Z;
+        ImageBrush Part(int x, int y, int w, int h, bool tile)
+        {
+            var b = new ImageBrush(new CroppedBitmap(src, new Int32Rect(x, y, w, h)));
+            if (tile) { b.TileMode = TileMode.Tile; b.ViewportUnits = BrushMappingMode.Absolute; b.Viewport = new Rect(0, 0, w / (double)Z, h / (double)Z); b.Stretch = Stretch.Fill; }
+            else b.Stretch = Stretch.Fill;
+            RenderOptions.SetBitmapScalingMode(b, BitmapScalingMode.HighQuality);
+            return b;
+        }
+        var g = new Grid();
+        RenderOptions.SetBitmapScalingMode(g, BitmapScalingMode.HighQuality);
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(s) }); g.ColumnDefinitions.Add(new ColumnDefinition()); g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(s) });
+        g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(s) }); g.RowDefinitions.Add(new RowDefinition()); g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(s) });
+        void Put(int c, int r, Brush b) { var x = new Border { Background = b }; Grid.SetColumn(x, c); Grid.SetRow(x, r); g.Children.Add(x); }
+        Put(1, 1, Part(p, p, W - 2 * p, H - 2 * p, false));
+        Put(1, 0, Part(p, 0, W - 2 * p, p, true)); Put(1, 2, Part(p, H - p, W - 2 * p, p, true));
+        Put(0, 1, Part(0, p, p, H - 2 * p, true)); Put(2, 1, Part(W - p, p, p, H - 2 * p, true));
+        Put(0, 0, Part(0, 0, p, p, false)); Put(2, 0, Part(W - p, 0, p, p, false));
+        Put(0, 2, Part(0, H - p, p, p, false)); Put(2, 2, Part(W - p, H - p, p, p, false));
+        var host = new Border { Child = content }; Grid.SetColumnSpan(host, 3); Grid.SetRowSpan(host, 3); g.Children.Add(host);
+        return g;
     }
 
     // his clock frame (clock.png), nine-sliced: corners and seals 1:1, the rail repeated along the edges, the slate inside
