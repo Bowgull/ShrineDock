@@ -72,11 +72,11 @@ class StripWindow : Window
 
         Loaded += (_, _) =>
         {
-            me = new WindowInteropHelper(this).Handle; SetClickThrough(true); if (primary) HideTaskbar();
+            me = new WindowInteropHelper(this).Handle; SetClickThrough(true); if (primary) { HideTaskbar(); WatchTaskbar(); }
             // Explorer restarting brings the Windows taskbar back (2026-11-02): hide it again once it is rebuilt
             if (primary) HwndSource.FromHwnd(me).AddHook((IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) =>
             {
-                if (msg == TaskbarCreated) Dispatcher.BeginInvoke(HideTaskbar, DispatcherPriority.Background);
+                if (msg == TaskbarCreated) Dispatcher.BeginInvoke(() => { HideTaskbar(); WatchTaskbar(); }, DispatcherPriority.Background); // a new Explorer, a new pid to watch
                 return IntPtr.Zero;
             });
         };
@@ -108,6 +108,35 @@ class StripWindow : Window
         while ((s = FindWindowEx(IntPtr.Zero, s, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero) yield return s;
     }
     static void HideTaskbar() { foreach (var t in Taskbars()) if (IsWindowVisible(t)) ShowWindow(t, 0); }
+
+    // Explorer shows its taskbar again when an app flashes for attention, on the Win key, etc. The half-second poll left it
+    // on screen until the next check, a visible flash (2026-11-05, his report). Hide it the moment Explorer shows it instead.
+    delegate void WinEventProc(IntPtr hook, uint ev, IntPtr h, int idObject, int idChild, uint thread, uint time);
+    [DllImport("user32.dll")] static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventProc proc, uint pid, uint thread, uint flags);
+    [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
+    static WinEventProc? taskbarShown; // held so the callback isn't collected
+    static IntPtr taskbarHook;
+    static void WatchTaskbar()
+    {
+        try
+        {
+            if (taskbarHook != IntPtr.Zero) { UnhookWinEvent(taskbarHook); taskbarHook = IntPtr.Zero; }
+            var tray = FindWindow("Shell_TrayWnd", null); if (tray == IntPtr.Zero) return;
+            GetWindowThreadProcessId(tray, out var explorer);
+            taskbarShown ??= (_, _, h, idObject, _, _, _) =>
+            {
+                try
+                {
+                    if (idObject != 0) return; // the window itself, not a part of it
+                    var c = new StringBuilder(64); GetClassName(h, c, 64);
+                    if (c.ToString() is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") ShowWindow(h, 0);
+                }
+                catch { }
+            };
+            taskbarHook = SetWinEventHook(0x8002, 0x8002, IntPtr.Zero, taskbarShown, explorer, 0, 0); // EVENT_OBJECT_SHOW, Explorer only
+        }
+        catch { }
+    }
     public static void ShowTaskbar() { foreach (var t in Taskbars()) ShowWindow(t, 5); }
 
     // ---- where the mouse is
@@ -136,7 +165,8 @@ class StripWindow : Window
     void Track()
     {
         if (++tick % 15 == 0) CheckGame();   // half a second, so alt-tab out brings it back quickly
-        if (tick % 60 == 0 && !asleepForGame && primary) HideTaskbar();
+        // keep the Windows taskbar hidden even while a game is in front (2026-11-04: BotW on the Sansui let the Acer's taskbar peek)
+        if (tick % 15 == 0 && primary) HideTaskbar();
         if (asleepForGame) return;
         if (!open) { if (AtTopEdge()) { if (!openIntent.IsEnabled) openIntent.Start(); } else openIntent.Stop(); return; }
         if (PointerOver()) hideTimer.Stop();
