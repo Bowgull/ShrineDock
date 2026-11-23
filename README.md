@@ -1,40 +1,25 @@
-# ShrineDock
+# shrinedock ⛩️
 
-The Shrine desktop's dock, top strip, clock and widgets. It's a WPF app (.NET 10, C# only, no XAML) and runs on Joshua's Shadow PC (Windows).
+the dock, top strip, clock & widgets of my custom windows desktop. it replaces the windows taskbar with something that looks like it came out of an old shrine: bronze rails, dark stone, a little cyan glow.
 
-This repo is **private**. It stays private: it holds his own art and paths.
+🚧 still building. rough edges are mine 🙂
 
-## Working from the Mac
+**what it does**
+- a dock on every screen. click an app and it opens on that screen, not wherever windows feels like putting it
+- its own start menu. the windows key opens it on whichever screen my mouse is on
+- a top strip with the clock, volume and any app that's trying to get my attention
+- a sound mixer with a slider for every app playing sound
+- soft cyan borders on every window so the whole desktop matches
+- remembers where i left my widgets, even when my second screen drops off and comes back
+- leaves full-screen games alone. nothing pops up over zelda
+- hides the windows taskbar the second it tries to sneak back
 
-The Mac can write and **compile** ShrineDock, but it can't **run** it. Use the Shadow only for the steps marked *Shadow* below.
+**the wallpaper**
+the desktop sits on a live wallpaper, the shrine garden, running in lively wallpaper. on startup shrinedock waits until every screen has its garden before the dock & clock fade in, so the whole desktop shows up at once instead of in pieces.
 
-```bash
-# once: install the .NET 10 SDK (https://dotnet.microsoft.com/download)
-git clone https://github.com/Bowgull/ShrineDock.git
-cd ShrineDock
-dotnet build        # EnableWindowsTargeting in the .csproj makes this work off Windows
-```
+**what i did**
+designed every piece of it. drew it all as mockups first, set the rules (soft corners, no boxes inside boxes, the bronze rail cut from my own art and never redrawn), and tested each part on the real pc before moving on. the full rulebook is in [docs/DESIGN-LANGUAGE.md](docs/DESIGN-LANGUAGE.md). ai tools wrote the code, i said no a lot 🙂
 
-### What the Mac can test
-- **It compiles.** `dotnet build` catches every code error, missing name and type mistake.
-- **Logic tests.** Anything that isn't drawing, run as plain unit tests. Keep that logic in WPF-free classes so it can be tested:
-  - reading `reddit-feed.json`
-  - the post queue
-  - the drift and easing maths
-  - seamless recycling
-  - the Plates brass pattern
-  - layout numbers (glyph centring, whole-pixel snapping)
-- **The design sheets.** The HTML mockups (in the Aang repo's `mockups/`) open in a Mac browser. Measure centres and gaps there, the same way as on the PC.
-- **Samara's Reddit reader.** Its tests live in the AangApp repo (`reddit.ts`, `reddittaste.ts`) and run in Node on the Mac.
+**built with** c#, .net 10, wpf (no xaml), windows shell hooks. runs next to lively wallpaper & rainmeter.
 
-### What needs the Shadow
-- How a window actually looks on the Windows desktop (DWM, the desktop layer, see-through edges).
-- **The CPU gate**: the feed must drift at under 3% of one core and sit still at under 1%. Measure ShrineDock plus `dwm.exe`, 3 × 20 s, and take the middle run.
-- Game sleep, full-screen quiet, and the real `%APPDATA%\Aang` bridge with Samara.
-- Shipping: install through his ShrineDo task.
-
-Never test on the Shadow while `Cemu.exe` or `Wow.exe` is running. Full-screen Samara is fine.
-
-## Rules
-- Other sessions work in this repo too: dock, Start, strip, feed. Keep each piece in its own files (the feed is `Feed*.cs`), never `git reset --hard`, and commit only your own paths.
-- Never pop a dialog on his screen. Catch every error.
+building it yourself: [docs/BUILDING.md](docs/BUILDING.md)
